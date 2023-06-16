@@ -55,9 +55,9 @@ where $(x_c,y_c)$ is the pixel coordinates of the distortion center.
 
 For more details, please refer to 
 
-1. https://en.wikipedia.org/wiki/Distortion_(optics)
-2. https://www.imatest.com/docs/distortion-methods-and-modules/
-3. https://www.imatest.com/support/docs/pre-5-2/geometric-calibration-deprecated/distortion-models/ 
+1. [Distortion_(optics)](https://en.wikipedia.org/wiki/Distortion_(optics))
+2. [imatest distortion-methods](https://www.imatest.com/docs/distortion-methods-and-modules/)
+3. [imatest distortion-models](https://www.imatest.com/support/docs/pre-5-2/geometric-calibration-deprecated/distortion-models/) 
 
 ##### Construct a Standard Radial Distortion Model
 
@@ -254,11 +254,11 @@ distortion.sketchmap(xlim,ylim)
 
 ### Prelude to star map matching
 
-Ahead of star map matching, a set of star catalog index files should be genarated using the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. For more details, please refer to https://github.com/lcx366/STARQUERY.
+Ahead of star map matching, a set of star catalog index files should be genarated using the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. For more details, please refer to [STARQUERY](https://github.com/lcx366/STARQUERY).
 
 #### Extract sources from images
 
-We use the python package `starextractor` to complete the source extraction, which can be installed by `pip install starextractor`. For more details, please refer to https://github.com/lcx366/STAREXTRACTOR.
+We use the python package `starextractor` to complete the source extraction, which can be installed by `pip install starextractor`. For more details, please refer to [STAREXTRACTOR](https://github.com/lcx366/STAREXTRACTOR).
 
 ```python
 from starextractor import AstroImage
@@ -510,7 +510,7 @@ sources2.show_distortion('contourf')
 ```
 
 <p align="middle">
-  <img src="readme_figs/output_73_1.png" width="500" />
+  <img src="readme_figs/output_73_1.png" width="800" />
 </p>
 
 ## Change log
