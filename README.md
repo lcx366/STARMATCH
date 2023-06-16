@@ -408,7 +408,11 @@ sources1.show_starmatch(image_raw,offset)
   <img src="readme_figs/output_52_0.png" width="500" />
 </p>
 
-The asterisks on the graph are consistent with the  `catalog_df`.
+The asterisks on the graph are consistent with the `catalog_df`.
+
+<p align="middle">
+  <img src="readme_figs/catalog_df.png" width="600" />
+</p>
 
 ### Calibrate the orientation of the camera center
 
