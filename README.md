@@ -156,9 +156,9 @@ The Tangential Distortion Model(also known as the de-centering distortion) is de
 
 Basic formulas are as follows:
 
-$x_u = x_d + (P_1 * (r_d^2 + 2*(x_d-x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r_d^4 + ...)$
+$x_u = x_d + (P_1 * (r_d^2 + 2*(x_d-x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4*r_d^4 + ...)$
 
-$y_u = y_d + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r_d^4 + ...)$
+$y_u = y_d + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4*r_d^4 + ...)$
 
 ##### Construct a Tangential Distortion Model
 
@@ -411,7 +411,7 @@ sources1.show_starmatch(image_raw,offset)
 The asterisks on the graph are consistent with the `catalog_df`.
 
 <p align="middle">
-  <img src="readme_figs/catalog_df.png" width="600" />
+  <img src="readme_figs/catalog_df.png" width="700" />
 </p>
 
 ### Calibrate the orientation of the camera center
@@ -431,8 +431,8 @@ Estimate the celestial coordinates and magnitudes of unknown targets.
 
 ```python
 xy_target,flux_target = [345,678],1e3 # [[345,678],[-278,521]],[1e3,2e4]
-radec,M_affine,M_uncalibrated = sources1.apply(xy_target,flux_target)
-print(radec,M_affine,M_uncalibrated)
+radec,M_affine,M_match = sources1.apply(xy_target,flux_target)
+print(radec,M_affine,M_match)
 print(sources1.affine_results.mag_rms,sources1.match_results.mag_rms)
 ```
 
