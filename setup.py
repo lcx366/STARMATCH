@@ -31,7 +31,7 @@ setup(
         'photutils',
         'astropy>=4.3.1',
         'GPy',
-        'PIL',
+        'Pillow',
         'colorama',
         'starcatalogquery'
         ],

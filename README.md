@@ -300,22 +300,22 @@ Attributes:
 
 #### Estimate the center pointing of the camera
 
-We use the HYG v3.0 star catalog(Thanks to [David Nash](https://www.astronexus.com/hyg)) to genarate the h5-format index file according to the camera parameters(field of view, detected magnitude, observation time) with the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. The h5-format index file records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
+We use the HYG v3.5 star catalog(Thanks to [David Nash](https://www.astronexus.com/hyg)) to genarate the h5-format index file according to the camera parameters(field of view, detected magnitude, observation time) with the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. The h5-format index file records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
 
 ##### Blind matching over star maps
 
 ```python
-catalogfile_h5 = 'starcatalogs/indices/hygv3/fov10_mag9.0_mcp20_2022.0.h5'
+catalogfile_h5 = 'starcatalogs/indices/hygv35/fov10_mag9.0_mcp20_2022.0.h5'
 fp_radec = sources1.center_pointing(catalogfile_h5)
 print(fp_radec)
 ```
 
-    (204.01793337608683, 36.24740259697955)m of 192
+    (204.01793337608683, 36.24740259697955)
 
 ##### Blind matching over star maps with the multi-core parallel computing
 
 ```python
-catalogfile_h5 = 'starcatalogs/indices/hygv3/fov10_mag9.0_mcp20_2022.0.h5'
+catalogfile_h5 = 'starcatalogs/indices/hygv35/fov10_mag9.0_mcp20_2022.0.h5'
 fp_radec = sources1.center_pointing_mp(catalogfile_h5)
 print(fp_radec) # (Ra,Dec) in [deg]
 ```
@@ -324,13 +324,13 @@ print(fp_radec) # (Ra,Dec) in [deg]
 
 ### Star Map Matching
 
-Load the simplified HYG v3.0 star catalog.
+Load the simplified HYG v3.5 star catalog.
 
 ```python
 from starcatalogquery import StarCatalog
 # The following starcatalog path stores the tile files with size of 5 deg, stars magnitude less than 9.0, and proper motion correction to epoch of 2022.0.
-dir_from_simplified = 'starcatalogs/simplified/hygv3/res5/mag9.0/epoch2022.0/'
-hygv3_simplified = StarCatalog.load(dir_from_simplified)
+dir_from_simplified = 'starcatalogs/simplified/hygv35/res5/mag9.0/epoch2022.0/'
+hygv35_simplified = StarCatalog.load(dir_from_simplified)
 ```
 
 The actual center pointing of the camera is (204.01706216087143, 36.25274704575726), in order to test the tolerance ability of star map matching, we set the pointing point to [200,30]. 
@@ -340,7 +340,7 @@ Another use of L is associated with the GPR(Gaussian Process Regression)-based d
 
 ```python
 fp_radec = [201,31]
-sources1.align(fp_radec,hygv3_simplified,L=32)
+sources1.align(fp_radec,hygv35_simplified,L=32)
 ```
 
     Instance of class Sources
@@ -464,7 +464,7 @@ sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20)
 #### Star Map Matching
 
 ```python
-sources2.align(fp_radec,hygv3_simplified,L=32,calibrate=True) 
+sources2.align(fp_radec,hygv35_simplified,L=32,calibrate=True) 
 ```
 
     Instance of class Sources
