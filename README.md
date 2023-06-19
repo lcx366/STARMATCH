@@ -519,7 +519,7 @@ sources2.show_distortion('contourf')
 
 ## Change log
 
-- **0.1.0 — Jun 16, 2023**
+- **0.1.1 — Jun 16, 2023**
   
   - The ***starmatch*** package was released.
 

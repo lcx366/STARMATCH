@@ -4,6 +4,7 @@ from scipy.spatial import KDTree
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import GPy,copy
+from pathlib import Path
 
 from .orientation import get_orientation,get_orientation_mp
 from .astroalign import invariantfeatures,find_transform_tree,matrix_transform
@@ -51,6 +52,29 @@ class Constructor(object):
     def __repr__(self):
     
         return self._description
+
+    def to_csv(self,path_catalog=None):
+        """
+        Save catalog_df to a csv file.
+
+        Usage:
+            >>> path_catalog = sources.affine_results.to_csv()
+            >>> path_catalog = sources.match_results.to_csv(path_catalog)
+            >>> path_catalog = sources.calibrate_results.to_csv(path_catalog)
+
+        Inputs:
+            path_catalog -> [str,optional,default=None] Path to save the csv file
+
+        Outputs:
+            path_catalog -> [str] Path of the csv file    
+        """
+        df = self.catalog_df
+
+        if path_catalog is None: path_catalog = 'csv/starmatch.csv' 
+        Path(path_catalog).parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(path_catalog) # Save the pandas dataframe to a csv-formatted file    
+
+        return path_catalog    
 
 class StarMatch(object):
     """
