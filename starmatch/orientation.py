@@ -19,6 +19,7 @@ def get_orientation(camera_xy,camera_asterisms,camera_invariant_tree,pixel_width
         fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
     """
 
+    fp_radec = None # Initialize the center pointing of the camera
     # Read the star catalog index file
     fp_radecs,stars_xy,stars_invariants,stars_asterisms = StarCatalog.read_h5_indices(catalogfile_h5)
 
