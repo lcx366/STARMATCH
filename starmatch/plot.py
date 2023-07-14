@@ -68,7 +68,7 @@ def show_image(image,figsize=(8, 8),figdpi=300,origin='upper',
     if 'figname' in kwargs: 
         fig_file = kwargs['figname']
         Path(fig_file).parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(fig_file) 
+        plt.savefig(fig_file,bbox_inches='tight') 
     else:
         plt.show()
             

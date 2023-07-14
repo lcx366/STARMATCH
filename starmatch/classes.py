@@ -660,7 +660,7 @@ class Sources(object):
             plt.show() 
         else:
             Path(fig_file).parent.mkdir(parents=True, exist_ok=True)
-            plt.savefig(fig_file)      
+            plt.savefig(fig_file,bbox_inches='tight')      
 
     def show_starmatch(self,image_raw,offset,fig_out=None):
         """
