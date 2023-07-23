@@ -275,7 +275,7 @@ Generate an object of `Sources` using pixel coordinates and flux(grayscale value
 ```python
 >>> from starmatch import StarMatch
 >>> # set the FOV[deg], pixel width[deg], resolution of the camera
->>> camera_params = {'fov':10,'pixel_width':0.01,'res':(1024,1024)}
+>>> camera_params = {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
 >>> # We use the first 20 points to compute the triangle invariants involved in affine transformation. 
 >>> # Usually these points are those sources that are brightest.
 >>> sources1 = StarMatch.from_sources(xy,flux,camera_params,20) # No distortion corrected 
