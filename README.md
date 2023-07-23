@@ -62,25 +62,25 @@ For more details, please refer to
 ##### Construct a Standard Radial Distortion Model
 
 ```python
-from starmatch.classes import Distortion
-model = 'RadialStandard' # Type of distortion model
-coeffs = [-1e-4,1e-4] # Coefficients of 5th order SRDM in form of [k1,k2]
-dc = [0.1,0.1] # Pixel coordinates of the distortion center
-distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
-distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
+>>> from starmatch.classes import Distortion
+>>> model = 'RadialStandard' # Type of distortion model
+>>> coeffs = [-1e-4,1e-4] # Coefficients of 5th order SRDM in form of [k1,k2]
+>>> dc = [0.1,0.1] # Pixel coordinates of the distortion center
+>>> distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
+>>> distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
 ```
 
 ##### Compute the distortion-corrected pixel coordinates
 
 ```python
-pixels_xy = [367,125]
-pixels_XY = distortion.apply(pixels_xy)
-print(pixels_XY)
-#Calculate the distortion-corrected pixel coordinates at normalized scale
-#pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
-#pixel_scale = 128
-#pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
-#print(pixels_XY)
+>>> pixels_xy = [367,125]
+>>> pixels_XY = distortion.apply(pixels_xy)
+>>> print(pixels_XY)
+>>> #Calculate the distortion-corrected pixel coordinates at normalized scale
+>>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
+>>> #pixel_scale = 128
+>>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
+>>> #print(pixels_XY)
 ```
 
     [[369.21610677 125.70199655]]
@@ -88,12 +88,12 @@ print(pixels_XY)
 ##### Sketch the vector plot of distortion
 
 ```python
-xlim,ylim = 512,512
-distortion.sketchmap(xlim,ylim)
-#For normalized pixel coordinates
-#xlim,ylim = 4,4
-#pixel_scale = 128
-#distortion.sketchmap(xlim,ylim,pixel_scale)
+>>> xlim,ylim = 512,512
+>>> distortion.sketchmap(xlim,ylim)
+>>> #For normalized pixel coordinates
+>>> #xlim,ylim = 4,4
+>>> #pixel_scale = 128
+>>> #distortion.sketchmap(xlim,ylim,pixel_scale)
 ```
 
 <p align="middle">
@@ -112,25 +112,25 @@ Basic formulas for DRDM are same as that for SRDM.
 ##### Construct a Division-mode Radial Distortion Model
 
 ```python
-from starmatch.classes import Distortion
-model = 'RadialDivision' # Type of distortion model
-coeffs = [-1e-4,1e-4] # Coefficients of 4th order DRDM in form of [k1,k2]
-dc = [0.1,0.1] # Pixel coordinates of the distortion center
-distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
-distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
+>>> from starmatch.classes import Distortion
+>>> model = 'RadialDivision' # Type of distortion model
+>>> coeffs = [-1e-4,1e-4] # Coefficients of 4th order DRDM in form of [k1,k2]
+>>> dc = [0.1,0.1] # Pixel coordinates of the distortion center
+>>> distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
+>>> distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
 ```
 
 ##### Compute the distortion-corrected pixel coordinates
 
 ```python
-pixels_xy = [367,125]
-pixels_XY = distortion.apply(pixels_xy)
-print(pixels_XY)
-#Calculate the distortion-corrected pixel coordinates at normalized scale
-#pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
-#pixel_scale = 128
-#pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
-#print(pixels_XY)
+>>> pixels_xy = [367,125]
+>>> pixels_XY = distortion.apply(pixels_xy)
+>>> print(pixels_XY)
+>>> #Calculate the distortion-corrected pixel coordinates at normalized scale
+>>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
+>>> #pixel_scale = 128
+>>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
+>>> #print(pixels_XY)
 ```
 
     [[364.79767243 124.30236829]]
@@ -138,12 +138,12 @@ print(pixels_XY)
 ##### Sketch the vector plot of distortion
 
 ```python
-xlim,ylim = 512,512
-distortion.sketchmap(xlim,ylim)
-#For normalized pixel coordinates
-#xlim,ylim = 4,4
-#pixel_scale = 128
-#distortion.sketchmap(xlim,ylim,pixel_scale)
+>>> xlim,ylim = 512,512
+>>> distortion.sketchmap(xlim,ylim)
+>>> #For normalized pixel coordinates
+>>> #xlim,ylim = 4,4
+>>> #pixel_scale = 128
+>>> #distortion.sketchmap(xlim,ylim,pixel_scale)
 ```
 
 <p align="middle">
@@ -163,25 +163,25 @@ $y_u = y_d + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + 
 ##### Construct a Tangential Distortion Model
 
 ```python
-from starmatch.classes import Distortion
-model = 'Tangential' # Type of distortion model
-coeffs = [-1e-4,1e-4] # Coefficients of 2nd order SRDM in form of [P1,P2]
-dc = [0.1,0.1] # Pixel coordinates of the distortion center
-distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
-distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
+>>> from starmatch.classes import Distortion
+>>> model = 'Tangential' # Type of distortion model
+>>> coeffs = [-1e-4,1e-4] # Coefficients of 2nd order SRDM in form of [P1,P2]
+>>> dc = [0.1,0.1] # Pixel coordinates of the distortion center
+>>> distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
+>>> distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
 ```
 
 ##### Compute the distortion-corrected pixel coordinates
 
 ```python
-pixels_xy = [367,125]
-pixels_XY = distortion.apply(pixels_xy)
-print(pixels_XY)
-#Calculate the distortion-corrected pixel coordinates at normalized scale
-#pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
-#pixel_scale = 128
-#pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
-#print(pixels_XY)
+>>> pixels_xy = [367,125]
+>>> pixels_XY = distortion.apply(pixels_xy)
+>>> print(pixels_XY)
+>>> #Calculate the distortion-corrected pixel coordinates at normalized scale
+>>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
+>>> #pixel_scale = 128
+>>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
+>>> #print(pixels_XY)
 ```
 
     [[366.75821931 125.06542319]]
@@ -189,12 +189,12 @@ print(pixels_XY)
 ##### Sketch the vector plot of distortion
 
 ```python
-xlim,ylim = 512,512
-distortion.sketchmap(xlim,ylim)
-#For normalized pixel coordinates
-#xlim,ylim = 4,4
-#pixel_scale = 128
-#distortion.sketchmap(xlim,ylim,pixel_scale)
+>>> xlim,ylim = 512,512
+>>> distortion.sketchmap(xlim,ylim)
+>>> #For normalized pixel coordinates
+>>> #xlim,ylim = 4,4
+>>> #pixel_scale = 128
+>>> #distortion.sketchmap(xlim,ylim,pixel_scale)
 ```
 
 <p align="middle">
@@ -214,25 +214,25 @@ $y_u = y_d + (y_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_2 * (r_d^2 + 2*(y_
 ##### Construct a Brown–Conrady Distortion Model
 
 ```python
-from starmatch.classes import Distortion
-model = 'Brown–Conrady' # Type of distortion model
-coeffs = [[-1e-4,1e-4],[1e-3,1e-3,1e-4,1e-5]] # Coefficients of Brown–Conrady distortion model in form of [[coeffs_radial],[coeffs_tangential]]
-dc = [0.1,0.1] # Pixel coordinates of the distortion center
-distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
-distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
+>>> from starmatch.classes import Distortion
+>>> model = 'Brown–Conrady' # Type of distortion model
+>>> coeffs = [[-1e-4,1e-4],[1e-3,1e-3,1e-4,1e-5]] # Coefficients of Brown–Conrady distortion model in form of [[coeffs_radial],[coeffs_tangential]]
+>>> dc = [0.1,0.1] # Pixel coordinates of the distortion center
+>>> distortion_scale = 128 # The length scale of the distortion model, that is, the number of pixels per unit length
+>>> distortion = Distortion(model,coeffs,dc,distortion_scale) # Establish a distortion model
 ```
 
 ### Compute the distortion-corrected pixel coordinates
 
 ```python
-pixels_xy = [367,125]
-pixels_XY = distortion.apply(pixels_xy)
-print(pixels_XY)
-#Calculate the distortion-corrected pixel coordinates at normalized scale
-#pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
-#pixel_scale = 128
-#pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
-#print(pixels_XY)
+>>> pixels_xy = [367,125]
+>>> pixels_XY = distortion.apply(pixels_xy)
+>>> print(pixels_XY)
+>>> #Calculate the distortion-corrected pixel coordinates at normalized scale
+>>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
+>>> #pixel_scale = 128
+>>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
+>>> #print(pixels_XY)
 ```
 
     [[372.88150908 127.60108593]]
@@ -240,12 +240,12 @@ print(pixels_XY)
 ##### Sketch the vector plot of distortion
 
 ```python
-xlim,ylim = 512,512
-distortion.sketchmap(xlim,ylim)
-#For normalized pixel coordinates
-#xlim,ylim = 4,4
-#pixel_scale = 128
-#distortion.sketchmap(xlim,ylim,pixel_scale)
+>>> xlim,ylim = 512,512
+>>> distortion.sketchmap(xlim,ylim)
+>>> #For normalized pixel coordinates
+>>> #xlim,ylim = 4,4
+>>> #pixel_scale = 128
+>>> #distortion.sketchmap(xlim,ylim,pixel_scale)
 ```
 
 <p align="middle">
@@ -261,11 +261,11 @@ Ahead of star map matching, a set of star catalog index files should be genarate
 We use the python package `starextractor` to complete the source extraction, which can be installed by `pip install starextractor`. For more details, please refer to [STAREXTRACTOR](https://github.com/lcx366/STAREXTRACTOR).
 
 ```python
-from starextractor import AstroImage
-imagefile = 'obs/fits/img_00000.fits' #imagefile = 'obs/bmp/img_00000.bmp'
-image = AstroImage.read_image(imagefile)
-sources = image.find_source(fwhm=14,mask=False)
-xy,flux = sources.xy,sources.brightness
+>>> from starextractor import AstroImage
+>>> imagefile = 'obs/fits/img_00000.fits' #imagefile = 'obs/bmp/img_00000.bmp'
+>>> image = AstroImage.read_image(imagefile)
+>>> sources = image.find_source(fwhm=14,mask=False)
+>>> xy,flux = sources.xy,sources.brightness
 ```
 
 Generate an object of `Sources` using pixel coordinates and flux(grayscale value) of sources, as is the entrance to star map matching and astronomical calibration.
@@ -273,12 +273,12 @@ Generate an object of `Sources` using pixel coordinates and flux(grayscale value
 #### Load the sources to StarMatch
 
 ```python
-from starmatch import StarMatch
-# set the FOV[deg], pixel width[deg], resolution of the camera
-camera_params = {'fov':10,'pixel_width':0.01,'res':(1024,1024)}
-# We use the first 20 points to compute the triangle invariants involved in affine transformation. 
-# Usually these points are those sources that are brightest.
-sources1 = StarMatch.from_sources(xy,flux,camera_params,20) # No distortion corrected 
+>>> from starmatch import StarMatch
+>>> # set the FOV[deg], pixel width[deg], resolution of the camera
+>>> camera_params = {'fov':10,'pixel_width':0.01,'res':(1024,1024)}
+>>> # We use the first 20 points to compute the triangle invariants involved in affine transformation. 
+>>> # Usually these points are those sources that are brightest.
+>>> sources1 = StarMatch.from_sources(xy,flux,camera_params,20) # No distortion corrected 
 ```
 
 We get an object `sources1`  with
@@ -298,6 +298,17 @@ Attributes:
     - _res -> Resolution of camera
 ```
 
+### Star Map Matching
+
+Load the simplified HYG v3.5 star catalog.
+
+```python
+>>> from starcatalogquery import StarCatalog
+>>> # The following starcatalog path stores the tile files with size of 5 deg, stars magnitude less than 9.0, and proper motion correction to epoch of 2022.0.
+>>> dir_from_simplified = 'starcatalogs/simplified/hygv35/res5/mag9.0/epoch2022.0/'
+>>> hygv35_simplified = StarCatalog.load(dir_from_simplified)
+```
+
 #### Estimate the center pointing of the camera
 
 We use the HYG v3.5 star catalog(Thanks to [David Nash](https://www.astronexus.com/hyg)) to genarate the h5-format index file according to the camera parameters(field of view, detected magnitude, observation time) with the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. The h5-format index file records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
@@ -305,32 +316,16 @@ We use the HYG v3.5 star catalog(Thanks to [David Nash](https://www.astronexus.c
 ##### Blind matching over star maps
 
 ```python
-catalogfile_h5 = 'starcatalogs/indices/hygv35/fov10_mag9.0_mcp20_2022.0.h5'
-fp_radec = sources1.center_pointing(catalogfile_h5)
-print(fp_radec)
+>>> fp_radec,pixel_width_estimate = sources1.center_pointing(hygv35_simplified)
+>>> print(fp_radec,pixel_width_estimate) # (Ra,Dec) in [deg], pixel width in [deg]
+>>> #fov = pixel_width_estimate * sources1._res
 ```
-
-    (204.01793337608683, 36.24740259697955)
 
 ##### Blind matching over star maps with the multi-core parallel computing
 
 ```python
-catalogfile_h5 = 'starcatalogs/indices/hygv35/fov10_mag9.0_mcp20_2022.0.h5'
-fp_radec = sources1.center_pointing_mp(catalogfile_h5)
-print(fp_radec) # (Ra,Dec) in [deg]
-```
-
-    (204.01793337608683, 36.24740259697955)
-
-### Star Map Matching
-
-Load the simplified HYG v3.5 star catalog.
-
-```python
-from starcatalogquery import StarCatalog
-# The following starcatalog path stores the tile files with size of 5 deg, stars magnitude less than 9.0, and proper motion correction to epoch of 2022.0.
-dir_from_simplified = 'starcatalogs/simplified/hygv35/res5/mag9.0/epoch2022.0/'
-hygv35_simplified = StarCatalog.load(dir_from_simplified)
+>>> fp_radec,pixel_width_estimate = sources1.center_pointing_mp(hygv35_simplified)
+>>> print(fp_radec,pixel_width_estimate) 
 ```
 
 The actual center pointing of the camera is (204.01706216087143, 36.25274704575726), in order to test the tolerance ability of star map matching, we set the pointing point to [200,30]. 
@@ -339,8 +334,8 @@ Note: in process of star map matching, we set **L**(default=32) as the normalize
 Another use of L is associated with the GPR(Gaussian Process Regression)-based distortion correction bellow. Experience has shown that normalizing the pixel coordinates by L is beneficial to the operation of GPR.
 
 ```python
-fp_radec = [201,31]
-sources1.align(fp_radec,hygv35_simplified,L=32)
+>>> fp_radec = [201,31]
+>>> sources1.align(fp_radec,hygv35_simplified,L=32)
 ```
 
     Instance of class Sources
@@ -399,9 +394,9 @@ where the `affine_results` refers to the statistic information of the affine-mat
 #### Show the matching stars on map
 
 ```python
-image_raw = sources.image_raw
-offset = sources.offset
-sources1.show_starmatch(image_raw,offset)
+>>> image_raw = sources.image_raw
+>>> offset = sources.offset
+>>> sources1.show_starmatch(image_raw,offset)
 ```
 
 <p align="middle">
@@ -417,10 +412,10 @@ The asterisks on the graph are consistent with the `catalog_df`.
 ### Calibrate the orientation of the camera center
 
 ```python
-sources1.fp_calibrate()
-print(sources1.fp_radec_calibrated)
-# [[204.01747112  36.25112389]]
-# Calibration from Astrometry.net is (13h 36m 04.207s,+36° 15' 03.012")
+>>> sources1.fp_calibrate()
+>>> print(sources1.fp_radec_calibrated)
+>>> # [[204.01747112  36.25112389]]
+>>> # Calibration from Astrometry.net is (13h 36m 04.207s,+36° 15' 03.012")
 ```
 
     [[204.01738012  36.25118506]]
@@ -430,10 +425,10 @@ print(sources1.fp_radec_calibrated)
 Estimate the celestial coordinates and magnitudes of unknown targets.
 
 ```python
-xy_target,flux_target = [345,678],1e3 # [[345,678],[-278,521]],[1e3,2e4]
-radec,M_affine,M_match = sources1.apply(xy_target,flux_target)
-print(radec,M_affine,M_match)
-print(sources1.affine_results.mag_rms,sources1.match_results.mag_rms)
+>>> xy_target,flux_target = [345,678],1e3 # [[345,678],[-278,521]],[1e3,2e4]
+>>> radec,M_affine,M_match = sources1.apply(xy_target,flux_target)
+>>> print(radec,M_affine,M_match)
+>>> print(sources1.affine_results.mag_rms,sources1.match_results.mag_rms)
 ```
 
     [[199.83995525  31.44951982]] 8.036101294387004 8.011023843192229
@@ -446,9 +441,9 @@ print(sources1.affine_results.mag_rms,sources1.match_results.mag_rms)
 Here, we add a Standard Radial distortion to raw sources to obtain distorted sources.
 
 ```python
-from starmatch.classes import Distortion
-distortion = Distortion('RadialStandard',[1e-3,-1e-3],[0.1,0.1],256)
-xy_distorted = distortion.apply(sources.xy,pixel_scale=1)
+>>> from starmatch.classes import Distortion
+>>> distortion = Distortion('RadialStandard',[1e-3,-1e-3],[0.1,0.1],256)
+>>> xy_distorted = distortion.apply(sources.xy,pixel_scale=1)
 ```
 
 #### Load the distorted sources to StarMatch
@@ -456,15 +451,15 @@ xy_distorted = distortion.apply(sources.xy,pixel_scale=1)
 Theoretically, for distorted images, a corresponding distortion correction model is usually provided. However, when the distortion model is unknown, we use the non-parametric Gaussian Process Regression(GPR) method to fit the distortion and obtain a non-parametric distortion model.
 
 ```python
-# The following `distortion_correction_model` is the inverse of `distortion`, and the inverse transformation of the distortion model is not yet implemented.
-# sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20,distortion_correction_model)
-sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20)
+>>> # The following `distortion_correction_model` is the inverse of `distortion`, and the inverse transformation of the distortion model is not yet implemented.
+>>> # sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20,distortion_correction_model)
+>>> sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20)
 ```
 
 #### Star Map Matching
 
 ```python
-sources2.align(fp_radec,hygv35_simplified,L=32,calibrate=True) 
+>>> sources2.align(fp_radec,hygv35_simplified,L=32,calibrate=True) 
 ```
 
     Instance of class Sources
@@ -498,7 +493,7 @@ Show the distortion of the camera in modes of vector or contourf.
 The vector plot shows the distortion where the sources are located.
 
 ```python
-sources2.show_distortion('vector')
+>>> sources2.show_distortion('vector')
 ```
 
 <p align="middle">
@@ -510,7 +505,7 @@ sources2.show_distortion('vector')
 The following contour plot shows the distortion in the x and y directions, respectively.
 
 ```python
-sources2.show_distortion('contourf')
+>>> sources2.show_distortion('contourf')
 ```
 
 <p align="middle">
@@ -519,8 +514,11 @@ sources2.show_distortion('contourf')
 
 ## Change log
 
+- **0.1.2 — Jul 23, 2023**
+  - Simplified the use of blind matching.
+  - Added pixel width and field of view estimates for blind matching.
+
 - **0.1.1 — Jun 16, 2023**
-  
   - The ***starmatch*** package was released.
 
 ## Next release

@@ -7,7 +7,7 @@ from .wcs import wcs_trans
       
 def get_orientation(camera_xy,camera_asterisms,camera_invariant_tree,pixel_width,catalogfile_h5):
     """
-    Obtain the center pointing of the camera through blind matching of star maps.
+    Obtain the center pointing and pixel width of the camera through blind matching of star maps.
 
     Inputs:
         camera_xy -> [2d array, n*2] Pixel coordinates of sources in camera.
@@ -16,10 +16,10 @@ def get_orientation(camera_xy,camera_asterisms,camera_invariant_tree,pixel_width
         pixel_width -> [float] Pixel size in deg, such as 0.01
         catalogfile_h5 -> Star catalog index file in h5 format, which records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
     Outputs:
-        fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
+        fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]
+        pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
 
-    fp_radec = None # Initialize the center pointing of the camera
     # Read the star catalog index file
     fp_radecs,stars_xy,stars_invariants,stars_asterisms = StarCatalog.read_h5_indices(catalogfile_h5)
 
@@ -43,15 +43,18 @@ def get_orientation(camera_xy,camera_asterisms,camera_invariant_tree,pixel_width
             wcs = wcs_trans(pixel_width,fp_radecs[i])
             cc_radec_estimate = wcs.pixel_to_world(pixels_cc_affine_x,pixels_cc_affine_y)
             fp_radec = fp_ra,fp_dec = cc_radec_estimate.ra.deg[0],cc_radec_estimate.dec.deg[0]
+            pixel_width_estimate = pixel_width * transf.scale
             break
         except:
-            continue   
+            fp_radec,pixel_width_estimate = None,None
+            continue
+    print('')        
 
-    return fp_radec  
+    return fp_radec,pixel_width_estimate 
 
 def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,pixel_width,catalogfile_h5):
     """
-    Obtain the center pointing of the camera through blind matching of star maps with the multi-core parallel computing.
+    Obtain the center pointing and pixel width of the camera through blind matching of star maps with the multi-core parallel computing.
 
     Inputs:
         camera_xy -> [2d array, n*2] Pixel coordinates of sources in camera.
@@ -61,6 +64,7 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,pixel_wi
         catalogfile_h5 -> Star catalog index file in h5 format, which records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
     Outputs:
         fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
+        pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
     import multiprocessing as mp
     from functools import partial
@@ -96,8 +100,8 @@ def find_transform_mp(params,arg):
         params -> Parameters that do not need to be allocated to multiple cores
         arg -> Variables that need to be allocated to multiple cores
     Outputs:  
-        fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
-
+        fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]
+        pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
     camera_xy,camera_asterisms,camera_invariant_tree,pixel_width = params
     camera = (camera_xy,camera_asterisms,camera_invariant_tree)
@@ -118,6 +122,8 @@ def find_transform_mp(params,arg):
         wcs = wcs_trans(pixel_width,fp_radecs_i)
         cc_radec_estimate = wcs.pixel_to_world(pixels_cc_affine_x,pixels_cc_affine_y)
         fp_radec = fp_ra,fp_dec = cc_radec_estimate.ra.deg[0],cc_radec_estimate.dec.deg[0]
+        pixel_width_estimate = pixel_width * transf.scale
+        res = (fp_radec,pixel_width_estimate)
     except:
-        fp_radec = None
-    return fp_radec
+        res = None
+    return res

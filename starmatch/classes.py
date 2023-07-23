@@ -11,6 +11,24 @@ from .astroalign import invariantfeatures,find_transform_tree,matrix_transform
 from .distortion import distortion_model
 from .plot import show_image
 
+def solidangle_ratio(fov,r):
+    """
+    Calculate the ratio of the solid angles spanned by the square and the cone.
+
+    Usage:
+        >>> ratio = Solid_angles_ratio(8,10)
+    Inputs:
+        fov -> [float] FOV of a camera in [deg] that determines a square
+        r -> [float] Angular radius in [deg] that determines a cone
+    Outputs:
+        ratio -> [float] The ratio of the solid angles spanned by the square and the cone    
+    """
+    fov_rad = np.deg2rad(fov)
+    r_rad = np.deg2rad(r)
+    Omega_square = 4*np.arcsin(np.tan(fov_rad/2)**2) # solid angles spanned by the square
+    Omega_cone = 4*np.pi*np.sin(r_rad/2)**2 # solid angles spanned by the cone
+    return Omega_square/Omega_cone
+
 def radec_res_rms(wcs,xy,catalog_df):
     """
     1. Given the WCS transformation, convert the pixel coordinates of stars to celestial coordinates.
@@ -74,7 +92,7 @@ class Constructor(object):
         Path(path_catalog).parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(path_catalog) # Save the pandas dataframe to a csv-formatted file    
 
-        return path_catalog    
+        return path_catalog
 
 class StarMatch(object):
     """
@@ -89,7 +107,7 @@ class StarMatch(object):
             >>> # Example 1: No distortion is considered
             >>> from starmatch import StarMatch
             >>> # set the FOV[deg], pixel width[deg], resolution of the camera
-            >>> camera_params = {'fov':10,'pixel_width':0.01,'res':(1024,1024)}
+            >>> camera_params = {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
             >>> # We use the first 20 points to compute the triangle invariants involved in affine transformation. 
             >>> # Usually these points are those sources that are brightest.
             >>> sources1 = StarMatch.from_sources(xy,flux,camera_params,20) # No distortion corrected 
@@ -103,15 +121,13 @@ class StarMatch(object):
             >>> distortion_scale = 128
             >>> distortion = Distortion(model,coeffs,dc,distortion_scale)
             >>> sources2 = StarMatch.from_sources(xy,flux,camera_params,20,distortion)
-
         Inputs:
             xy_raw -> [2d array] Pixel coordinates of sources
             flux_raw -> [array] Flux(Grayscale value) of sources
-            camera_params -> [dict] The necessary parameters of the camera, such as {'fov':10,'pixel_width':0.01,'res':(1024,1024)}
+            camera_params -> [dict] The necessary parameters of the camera, such as {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
             where 'fov' and 'pixel_width' are in [deg], and 'res' represents the resolution of the camera.
             max_control_points -> [int,optional,default=20] Maximum number of sources used to execute the star map matching
             distortion -> Instance of class Distortion, which defines the distortion model
-
         Outputs:
             sources -> Instance of class Sources, which includes the following attributes:
                 xy_raw -> [2d array, n*2] Pixel coordinates of sources
@@ -121,7 +137,7 @@ class StarMatch(object):
                 invariants -> [2d array, n*2] Array of (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of sources.
                 asterisms -> [2d array n*3] Array of the indices of sources that correspond to each invariant triangle.
                 kdtree -> [Instance of class scipy.spatial.KDTree] 2d-tree for quick nearest-neighbor lookup
-                max_control_points -> [int,optional,default=20] Maximum number of sources used to execute the star map matching
+                max_control_points -> [int] Maximum number of sources used to execute the star map matching
                 _fov -> [float] Camera field of view in [deg]
                 _pixel_width -> [float] Camera pixel size in [deg]
                 _res -> [tuple of int] Camera resolution
@@ -157,7 +173,7 @@ class Sources(object):
         - invariants -> [2d array(m*2)] Array of (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of sources.
         - asterisms -> [2d array(m*3)] Array of the indices of sources that correspond to invariant triangles.
         - kdtree -> [Instance of class scipy.spatial.KDTree] 2d-tree of triangel invariants for quick nearest-neighbor lookup
-        - max_control_points -> [int,optional,default=20] Maximum number of sources used to execute the star map matching
+        - max_control_points -> [int] Maximum number of sources used to execute the star map matching
         - _fov -> [float] Field of View of camera in [deg]
         - _pixel_width -> [float] Pixel width of camera in [deg]
         - _res -> [tuple of int] Resolution of camera
@@ -258,49 +274,46 @@ class Sources(object):
 
         return self   
 
-    def center_pointing(self,catalogfile_h5):
+    def center_pointing(self,simplified_catalog,max_control_points=30):
         """
-        Estimate the center pointing of the camera through blind matching over star maps.
+        Estimate the center pointing and pixel width of the camera through blind matching over star maps.
 
         Usage:
-            >>> # The following star catalog index file can be genarated from the python package starcatalogquery, which can be installed by pip install starextractor. 
-            >>> # For more details, please refer to https://github.com/lcx366/STARQUERY.
-            >>> catalogfile_h5 = 'starcatalogs/indices/hygv3/fov10_mag9.0_mcp20_2022.0.h5'
-            >>> fp_radec = sources1.center_pointing(catalogfile_h5)
+            >>> fp_radec,pixel_width = sources1.center_pointing(simplified_catalog)
         Inputs:
-            catalogfile_h5 -> Star catalog index file in h5 format, which records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
+            simplified_catalog -> Instance of class StarCatalogSimplified
+            max_control_points -> [int,optional,default=30] Maxinum number of the stars sorted by brightness used for a sky area.
         Outputs:
-            fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
-        Note:
-            The star catalog index file should be consistent with or close to the camera's field of view, detected star magnitude, and detected time.    
+            fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
+            pixel_width -> [float] Pixel width of camera in [deg]
         """
-        max_control_points = int(catalogfile_h5.split('mcp')[1].split('_')[0])    
-        self.invariantfeatures(max_control_points)
-        fp_radec = get_orientation(self.xy,self.asterisms,self.kdtree,self._pixel_width,catalogfile_h5)
 
-        return fp_radec
+        indices_h5,mcp_ratio = simplified_catalog.h5_incices(self._fov,self._pixel_width,max_control_points)
+        max_control_points = round(max_control_points*mcp_ratio)
+        self.invariantfeatures(max_control_points) 
+        fp_radec,pixel_width_estimate = get_orientation(self.xy,self.asterisms,self.kdtree,self._pixel_width,indices_h5)
 
-    def center_pointing_mp(self,infile_h5):
+        return fp_radec,pixel_width_estimate
+
+    def center_pointing_mp(self,simplified_catalog,max_control_points=30):
         """
         Estimate the center pointing of the camera through blind matching over star maps with the multi-core parallel computing.
 
         Usage:
-            >>> # The following star catalog index file can be genarated from the python package starcatalogquery, which can be installed by pip install starextractor. 
-            >>> # For more details, please refer to https://github.com/lcx366/STARQUERY.
-            >>> catalogfile_h5 = 'starcatalogs/indices/hygv3/fov10_mag9.0_mcp20_2022.0.h5'
-            >>> fp_radec = sources1.center_pointing_mp(catalogfile_h5)
+            >>> fp_radec,pixel_width = sources1.center_pointing_mp(simplified_catalog)
         Inputs:
-            catalogfile_h5 -> Star catalog index file in h5 format, which records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
+            simplified_catalog -> Instance of class StarCatalogSimplified
+            max_control_points -> [int,optional,default=30] Maxinum number of the stars sorted by brightness used for a sky area.
         Outputs:
-            fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
-        Note:
-            The star catalog index file should be consistent with or close to the camera's field of view, detected star magnitude, and detected time.  
+            fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
+            pixel_width -> [float] Pixel width of camera in [deg]
         """
-        max_control_points = int(infile_h5.split('mcp')[1].split('_')[0])    
+        indices_h5,mcp_ratio = simplified_catalog.h5_incices(self._fov,self._pixel_width,max_control_points)
+        max_control_points = round(max_control_points*mcp_ratio)  
         self.invariantfeatures(max_control_points)
-        fp_radec = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._pixel_width,infile_h5)
+        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._pixel_width,indices_h5)
 
-        return fp_radec    
+        return fp_radec,pixel_width_estimate
 
     def align(self,fp_radec,simplified_catalog,L=32,calibrate=False):
         """
@@ -309,7 +322,7 @@ class Sources(object):
         Usage:
             >>> # Example 1: with no distortion on pixel coordinates of sources
             >>> from starmatch import StarMatch
-            >>> camera_params = {'fov':10,'pixel_width':0.01,'res':(1024,1024)}
+            >>> camera_params = {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
             >>> sources1 = StarMatch.from_sources(xy,flux,camera_params)
             >>> # Load the simplified star catalog
             >>> from starcatalogquery import StarCatalog
@@ -335,11 +348,13 @@ class Sources(object):
             updated self      
         """
         fov,pixel_width,res = self._fov,self._pixel_width,self._res
-        max_control_points = self.max_control_points
+        search_radius = 0.75*fov
+        ratio = solidangle_ratio(fov,search_radius)
+
+        max_control_points = int(self.max_control_points/ratio)
         pixels_camera,flux_camera = self.xy,self.flux
 
         # Query Star Catalog around the fiducial point.
-        search_radius = 0.6*fov
         stars = simplified_catalog.search_cone(fp_radec,search_radius,max_control_points)
         stars.pixel_xy(pixel_width) # Calculate the pixel coordinates of stars
         stars.invariantfeatures() # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
@@ -410,8 +425,8 @@ class Sources(object):
         self.affine_results = affine_results
 
         # Basic results for affine transformation
-        dict_values = wcs,fp_radec_affine,affine_matrix,affine_translation,affine_rotation,affine_scale,L
-        dict_keys = '_wcs','fp_radec_affine','affine_matrix','_affine_translation','_affine_rotation','_affine_scale','_L'
+        dict_values = wcs,fp_radec_affine,affine_matrix,affine_translation,affine_rotation,affine_scale,L,pixel_width,fov
+        dict_keys = '_wcs','fp_radec_affine','affine_matrix','_affine_translation','_affine_rotation','_affine_scale','_L','_pixel_width','_fov'
         info_update = dict(zip(dict_keys, dict_values))
         self.info.update(info_update)
         self._wcs = wcs
@@ -476,6 +491,12 @@ class Sources(object):
         match_results = Constructor(info_match_results)
         self.info['match_results'] = match_results
         self.match_results = match_results
+
+        pixel_width_estimate = pixel_width*affine_scale
+        fov_estimate = pixel_width_estimate * self._res
+        self.pixel_width_estimate = pixel_width_estimate
+        self.fov_estimate = fov_estimate
+        self.info.update(dict(zip(['pixel_width_estimate','fov_estmate'],[pixel_width_estimate,fov_estimate])))
 
         # Distortion correction
         if calibrate:
