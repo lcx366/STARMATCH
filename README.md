@@ -109,7 +109,7 @@ Contour plot of the distortion in x and y components respectively:
 ```
 
 <p align="middle">
-  <img src="readme_figs/output_8_1_contourf.png" width="500" />
+  <img src="readme_figs/output_8_1_contourf.png" width="800" />
 </p>
 
 #### Example: Division-mode Radial Distortion Model(DRDM)
@@ -221,7 +221,7 @@ Basic formulas are as follows:
 
 $x_u = x_d + (x_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_1 * (r_d^2 + 2*(x_d-x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r_d^4 + ...)$
 
-$y_u = y_d + (y_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r+d^4 + ...)$
+$y_u = y_d + (y_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r_d^4 + ...)$
 
 ##### Construct a Brown–Conrady Distortion Model
 
