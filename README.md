@@ -85,7 +85,9 @@ For more details, please refer to
 
     [[369.21610677 125.70199655]]
 
-##### Sketch the vector plot of distortion
+##### Sketch the distortion
+
+Vector plot of the distortion:
 
 ```python
 >>> xlim,ylim = 512,512
@@ -98,6 +100,16 @@ For more details, please refer to
 
 <p align="middle">
   <img src="readme_figs/output_8_1.png" width="500" />
+</p>
+
+Contour plot of the distortion in x and y components respectively:
+
+```python
+>>> distortion.sketchmap(xlim,ylim,mode='contourf')
+```
+
+<p align="middle">
+  <img src="readme_figs/output_8_1_contourf.png" width="500" />
 </p>
 
 #### Example: Division-mode Radial Distortion Model(DRDM)
@@ -156,9 +168,9 @@ The Tangential Distortion Model(also known as the de-centering distortion) is de
 
 Basic formulas are as follows:
 
-$x_u = x_d + (P_1 * (r_d^2 + 2*(x_d-x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4*r_d^4 + ...)$
+$x_u = x_d + (P_1 * (r_d^2 + 2*(x_d - x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4 * r_d^4 + ...)$
 
-$y_u = y_d + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4*r_d^4 + ...)$
+$y_u = y_d + (P_2 * (r_d^2 + 2*(y_d - y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4 * r_d^4 + ...)$
 
 ##### Construct a Tangential Distortion Model
 
@@ -514,16 +526,22 @@ The following contour plot shows the distortion in the x and y directions, respe
 
 ## Change log
 
+- **0.1.3 — Sep 05, 2023**
+  
+  - Added contour plot for distortion models.
+  - Minor bugs fixed.
+
 - **0.1.2 — Jul 23, 2023**
+  
   - Simplified the use of blind matching.
   - Added pixel width and field of view estimates for blind matching.
 
 - **0.1.1 — Jun 16, 2023**
+  
   - The ***starmatch*** package was released.
 
 ## Next release
 
-- Add contour plot of distortion models
 - Add aberration and light time correction
 - Find the inverse transformation of distortion models  
 - How to eliminate outliers in GPR

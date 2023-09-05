@@ -2,6 +2,7 @@ import numpy as np
 from numpy.linalg import norm
 from scipy.spatial import KDTree
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import MaxNLocator
 import GPy,copy
 from pathlib import Path
@@ -288,7 +289,7 @@ class Sources(object):
             pixel_width -> [float] Pixel width of camera in [deg]
         """
 
-        indices_h5,mcp_ratio = simplified_catalog.h5_incices(self._fov,self._pixel_width,max_control_points)
+        indices_h5,mcp_ratio = simplified_catalog.h5_indices(self._fov,self._pixel_width,max_control_points)
         max_control_points = round(max_control_points*mcp_ratio)
         self.invariantfeatures(max_control_points) 
         fp_radec,pixel_width_estimate = get_orientation(self.xy,self.asterisms,self.kdtree,self._pixel_width,indices_h5)
@@ -308,7 +309,7 @@ class Sources(object):
             fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
             pixel_width -> [float] Pixel width of camera in [deg]
         """
-        indices_h5,mcp_ratio = simplified_catalog.h5_incices(self._fov,self._pixel_width,max_control_points)
+        indices_h5,mcp_ratio = simplified_catalog.h5_indices(self._fov,self._pixel_width,max_control_points)
         max_control_points = round(max_control_points*mcp_ratio)  
         self.invariantfeatures(max_control_points)
         fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._pixel_width,indices_h5)
@@ -654,12 +655,12 @@ class Sources(object):
             mean = mean_L * self._L
 
             fig = plt.figure(dpi=300)
-            axes = fig.subplots(1,2)
+            if xlim > 1.2*ylim:
+                axes = fig.subplots(2,1)
+            else:
+                axes = fig.subplots(1,2)  
 
             for i in range(2):
-
-                axes[i].set_aspect('equal', adjustable='box')
-
                 if mean[i].max()*mean[i].min() < 0:
                     abs_Z_max = np.abs(mean[i]).max()     
                     Z_levels = np.linspace(-abs_Z_max,abs_Z_max, 51)
@@ -667,9 +668,12 @@ class Sources(object):
                 else:    
                     cs = axes[i].contourf(X, Y, mean[i],extend='both') 
 
-                cb = fig.colorbar(cs, ax=axes[i],format='%4.1f',pad=0.07,shrink=0.5)
+                divider = make_axes_locatable(axes[i])  
+                cax = divider.append_axes("right", size="5%", pad=0.05) 
+                cb = fig.colorbar(cs, ax=axes[i],cax=cax,format='%4.1f')
                 cb.ax.tick_params(labelsize=7)
 
+                axes[i].set_aspect('equal', adjustable='box')
                 axes[i].scatter(x, y,facecolors="None", color='m',s=10,alpha=0.5) 
                 axes[i].set_xlim(-xlim, xlim)
                 axes[i].set_ylim(-ylim, ylim)
@@ -809,7 +813,7 @@ class Distortion(object):
         
         return pixels_XY
 
-    def sketchmap(self,xlim,ylim,pixel_scale=1):   
+    def sketchmap(self,xlim,ylim,pixel_scale=1,mode='vector'):   
         """
         Sketch the vector plot of distortion
 
@@ -825,9 +829,6 @@ class Distortion(object):
             ylim -> [float] The y-direction boundary of the sketch map
             pixel_scale -> [int,optional,default=1] The length scale of the normalized pixel coordinates, that is, the number of pixels per unit length   
         """ 
-        plt.clf()
-        fig, ax = plt.subplots(dpi=300)
-
         ratio = pixel_scale/self.distortion_scale
 
         x = np.linspace(-xlim, xlim, 20)
@@ -842,11 +843,44 @@ class Distortion(object):
         vx_,vy_ = (xy_ - self.apply(xy_,self.distortion_scale)).T # distortion 
 
         # Restore to the normalized scale
-        vx,vy = vx_/ratio,vy_/ratio
+        vxy = vx,vy = (vx_/ratio).reshape(X.shape),(vy_/ratio).reshape(Y.shape)
 
-        ax.quiver(X,Y,vx.reshape(X.shape),vy.reshape(Y.shape),color="C0") # scale=20
-        ax.set_aspect('equal', adjustable='box')
-        ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-        ax.tick_params(axis='both', which='major', labelsize=7)
-        plt.show()
+        plt.clf()
+
+        if mode == 'vector':
+            fig, ax = plt.subplots(dpi=300)
+            ax.quiver(X,Y,vx,vy,color="C0") # scale=20
+            ax.set_aspect('equal', adjustable='box')
+            ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.tick_params(axis='both', which='major', labelsize=7)
+
+        elif mode == 'contourf':
+            
+            fig = plt.figure(dpi=300)
+
+            if xlim > 1.2*ylim:
+                axes = fig.subplots(2,1)
+            else:
+                axes = fig.subplots(1,2)
+            
+            for i in range(2):
+                if vxy[i].max()*vxy[i].min() < 0:
+                    abs_Z_max = np.abs(vxy[i]).max()     
+                    Z_levels = np.linspace(-abs_Z_max,abs_Z_max, 51)
+                    cs = axes[i].contourf(X, Y, vxy[i],levels = Z_levels,extend='both',cmap=plt.cm.RdBu_r) 
+                else:    
+                    cs = axes[i].contourf(X, Y, vxy[i],extend='both') 
+
+                divider = make_axes_locatable(axes[i])  
+                cax = divider.append_axes("right", size="5%", pad=0.05)    
+                cb = fig.colorbar(cs, ax=axes[i],cax=cax,format='%4.1f')
+                cb.ax.tick_params(labelsize=7)
+                axes[i].set_aspect('equal', adjustable='box')
+                axes[i].set_xlim(-xlim, xlim)
+                axes[i].set_ylim(-ylim, ylim)
+                axes[i].tick_params(axis='both', which='major', labelsize=7)
+            plt.subplots_adjust(wspace=0.4)
+        
+        plt.show() 
+
