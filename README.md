@@ -76,14 +76,13 @@ For more details, please refer to
 >>> pixels_xy = [367,125]
 >>> pixels_XY = distortion.apply(pixels_xy)
 >>> print(pixels_XY)
+>>> # [[369.21610677 125.70199655]]
 >>> #Calculate the distortion-corrected pixel coordinates at normalized scale
 >>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
 >>> #pixel_scale = 128
 >>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
 >>> #print(pixels_XY)
 ```
-
-    [[369.21610677 125.70199655]]
 
 ##### Sketch the distortion
 
@@ -138,14 +137,13 @@ Basic formulas for DRDM are same as that for SRDM.
 >>> pixels_xy = [367,125]
 >>> pixels_XY = distortion.apply(pixels_xy)
 >>> print(pixels_XY)
+>>> # [[364.79767243 124.30236829]]
 >>> #Calculate the distortion-corrected pixel coordinates at normalized scale
 >>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
 >>> #pixel_scale = 128
 >>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
 >>> #print(pixels_XY)
 ```
-
-    [[364.79767243 124.30236829]]
 
 ##### Sketch the vector plot of distortion
 
@@ -189,14 +187,13 @@ $y_u = y_d + (P_2 * (r_d^2 + 2*(y_d - y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 
 >>> pixels_xy = [367,125]
 >>> pixels_XY = distortion.apply(pixels_xy)
 >>> print(pixels_XY)
+>>> # [[366.75821931 125.06542319]]
 >>> #Calculate the distortion-corrected pixel coordinates at normalized scale
 >>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
 >>> #pixel_scale = 128
 >>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
 >>> #print(pixels_XY)
 ```
-
-    [[366.75821931 125.06542319]]
 
 ##### Sketch the vector plot of distortion
 
@@ -240,14 +237,13 @@ $y_u = y_d + (y_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_2 * (r_d^2 + 2*(y_
 >>> pixels_xy = [367,125]
 >>> pixels_XY = distortion.apply(pixels_xy)
 >>> print(pixels_XY)
+>>> # [[372.88150908 127.60108593]]
 >>> #Calculate the distortion-corrected pixel coordinates at normalized scale
 >>> #pixels_xy = [[2.8671875, 0.9765625], [1.109375, -0.875]]
 >>> #pixel_scale = 128
 >>> #pixels_XY  = distortion.apply(pixels_xy,pixel_scale)
 >>> #print(pixels_XY)
 ```
-
-    [[372.88150908 127.60108593]]
 
 ##### Sketch the vector plot of distortion
 
@@ -348,9 +344,8 @@ Another use of L is associated with the GPR(Gaussian Process Regression)-based d
 ```python
 >>> fp_radec = [201,31]
 >>> sources1.align(fp_radec,hygv35_simplified,L=32)
+>>> # Instance of class Sources
 ```
-
-    Instance of class Sources
 
 We get object `sources1` updated with new attributes added:
 
@@ -430,8 +425,6 @@ The asterisks on the graph are consistent with the `catalog_df`.
 >>> # Calibration from Astrometry.net is (13h 36m 04.207s,+36° 15' 03.012")
 ```
 
-    [[204.01738012  36.25118506]]
-
 ### Astronomical Positioning and Apparent Magnitude Estimation
 
 Estimate the celestial coordinates and magnitudes of unknown targets.
@@ -440,11 +433,10 @@ Estimate the celestial coordinates and magnitudes of unknown targets.
 >>> xy_target,flux_target = [345,678],1e3 # [[345,678],[-278,521]],[1e3,2e4]
 >>> radec,M_affine,M_match = sources1.apply(xy_target,flux_target)
 >>> print(radec,M_affine,M_match)
+>>> # [[199.83995525  31.44951982]] 8.036101294387004 8.011023843192229
 >>> print(sources1.affine_results.mag_rms,sources1.match_results.mag_rms)
+>>> # 0.08052914228287848 0.10371476611720697 
 ```
-
-    [[199.83995525  31.44951982]] 8.036101294387004 8.011023843192229
-    0.08052914228287848 0.10371476611720697
 
 ### Star Map Matching with geometric distortion considered
 
@@ -472,9 +464,8 @@ Theoretically, for distorted images, a corresponding distortion correction model
 
 ```python
 >>> sources2.align(fp_radec,hygv35_simplified,L=32,calibrate=True) 
+>>> # Instance of class Sources
 ```
-
-    Instance of class Sources
 
 We get object `sources2` updated with new attributes added:
 

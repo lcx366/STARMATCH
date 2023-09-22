@@ -250,30 +250,26 @@ class Sources(object):
 
     def invariantfeatures(self,max_control_points):
         """
-        Given the max_control_points, refresh the following calculations and update the self:
+        Given the max_control_points, carry out the following calculations:
         1. Calculate the unique invariants (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of centroids.
         2. Construct the 2D Tree from the the unique invariants.
         3. Record an array of the indices of centroids that correspond to each invariant.
 
         Usage:
-            >>> # update the sources
-            >>> sources.invariantfeatures(max_control_points)
+            >>> new_sources = sources.invariantfeatures(max_control_points)
         Inputs:
-            max_control_points -> [int] Maximum number of sources used to re-execute invariantfeatures
+            max_control_points -> [int] Maximum number of sources used to execute invariantfeatures
         Outputs:
-            Updated self
+            Updated sources
         """
+        info = self.info.copy()
         n = len(self.xy_raw)
         if max_control_points > n: max_control_points = n
         if self.max_control_points != max_control_points:  
-
             xy = self.xy_raw[:max_control_points]
             invariants,asterisms,kdtree = invariantfeatures(xy)
-
-            self.info.update({'xy':xy,'invariants':invariants,'asterisms':asterisms,'kdtree':kdtree,'max_control_points':max_control_points})
-            self.xy,self.invariants,self.asterisms,self.kdtree,self.max_control_points = xy,invariants,asterisms,kdtree,max_control_points
-
-        return self   
+            info.update({'xy':xy,'invariants':invariants,'asterisms':asterisms,'kdtree':kdtree,'max_control_points':max_control_points})
+        return Sources(info) 
 
     def center_pointing(self,simplified_catalog,max_control_points=30):
         """
@@ -291,8 +287,8 @@ class Sources(object):
 
         indices_h5,mcp_ratio = simplified_catalog.h5_indices(self._fov,self._pixel_width,max_control_points)
         max_control_points = round(max_control_points*mcp_ratio)
-        self.invariantfeatures(max_control_points) 
-        fp_radec,pixel_width_estimate = get_orientation(self.xy,self.asterisms,self.kdtree,self._pixel_width,indices_h5)
+        new_self = self.invariantfeatures(max_control_points) 
+        fp_radec,pixel_width_estimate = get_orientation(new_self.xy,new_self.asterisms,new_self.kdtree,new_self._pixel_width,indices_h5)
 
         return fp_radec,pixel_width_estimate
 
@@ -311,8 +307,8 @@ class Sources(object):
         """
         indices_h5,mcp_ratio = simplified_catalog.h5_indices(self._fov,self._pixel_width,max_control_points)
         max_control_points = round(max_control_points*mcp_ratio)  
-        self.invariantfeatures(max_control_points)
-        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._pixel_width,indices_h5)
+        new_self = self.invariantfeatures(max_control_points)
+        fp_radec,pixel_width_estimate = get_orientation_mp(new_self.xy,new_self.asterisms,new_self.kdtree,new_self._pixel_width,indices_h5)
 
         return fp_radec,pixel_width_estimate
 
@@ -604,15 +600,15 @@ class Sources(object):
 
         return self
             
-    def show_distortion(self,mode,fig_file=None):
+    def show_distortion(self,mode='vector',fig_file=None):
         """
-        Show the distortion of the camera in modes of vector or contourf.
+        Show the distortion of the camera.
 
         Usage:
             >>> sources2.show_distortion('vector')
             >>> sources2.show_distortion('contourf')
         Inputs:
-            mode -> [str] How distortions are displayed, including 'vector' plots or 'contourf' plots    
+            mode -> [str,optional,default='vector'] The way of the distortion is displayed. Avaliable options include 'vector' plot and 'contourf' plot.  
             fig_file -> [str] Path to save the distortion map
         outputs:
             distortion map
@@ -815,7 +811,7 @@ class Distortion(object):
 
     def sketchmap(self,xlim,ylim,pixel_scale=1,mode='vector'):   
         """
-        Sketch the vector plot of distortion
+        Sketch the distortion.
 
         Usage:
             >>> xlim,ylim = 512,512
@@ -828,6 +824,7 @@ class Distortion(object):
             xlim -> [float] The x-direction boundary of the sketch map
             ylim -> [float] The y-direction boundary of the sketch map
             pixel_scale -> [int,optional,default=1] The length scale of the normalized pixel coordinates, that is, the number of pixels per unit length   
+            mode -> [str,optional,default='vector'] The way of the distortion is displayed. Avaliable options include 'vector' plot and 'contourf' plot.   
         """ 
         ratio = pixel_scale/self.distortion_scale
 
