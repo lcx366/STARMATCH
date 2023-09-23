@@ -517,6 +517,10 @@ The following contour plot shows the distortion in the x and y directions, respe
 
 ## Change log
 
+- **0.1.4 — Sep 23, 2023**
+  
+  - Fixed an issue where star chart matching failed after performing a blind match.
+
 - **0.1.3 — Sep 05, 2023**
   
   - Added contour plot for distortion models.
