@@ -283,9 +283,7 @@ def _shape(image):
     return h, w
 
 
-def find_transform(
-    source, target, max_control_points=20, detection_sigma=5, min_area=5
-):
+def find_transform(source, target, max_control_points=20):
     """Estimate the transform between ``source`` and ``target``.
 
     Return a SimilarityTransform object ``T`` that maps pixel x, y indices from
@@ -303,12 +301,6 @@ def find_transform(
             or an interable of (x, y) coordinates of the target control points.
         max_control_points
             The maximum number of control point-sources to find the transformation.
-        detection_sigma : int
-            Factor of background std-dev above which is considered a detection.
-            This value is ignored if input are not images.
-        min_area : int
-            Minimum number of connected pixels to be considered a source.
-            This value is ignored if input are not images.
 
     Returns
     -------
