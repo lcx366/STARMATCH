@@ -269,10 +269,10 @@ Ahead of star map matching, a set of star catalog index files should be genarate
 We use the python package `starextractor` to complete the source extraction, which can be installed by `pip install starextractor`. For more details, please refer to [STAREXTRACTOR](https://github.com/lcx366/STAREXTRACTOR).
 
 ```python
->>> from starextractor import AstroImage
+>>> from starextractor import parse_image
 >>> imagefile = 'obs/fits/img_00000.fits' #imagefile = 'obs/bmp/img_00000.bmp'
->>> image = AstroImage.read_image(imagefile)
->>> sources = image.find_source(fwhm=14,mask=False)
+>>> data = parse_image(imagefile)
+>>> sources = data.find_source()
 >>> xy,flux = sources.xy,sources.brightness
 ```
 
