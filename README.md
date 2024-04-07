@@ -36,9 +36,9 @@ Considering that the distortion model involves the power of the distance from th
 
 The Standard Radial Distortion Model(SRDM) is defined by the distortion center and the distortion coefficients.
 
-- The 3rd order polynomial in standard form: $r_u = r_d + k_1 * r_d^3$
-- The 5th order polynomial in standard form: $r_u = r_d + k_1 * r_d^3 + k_2 * r_d^5$
-- The 5th order polynomial in all form: $r_u = r_d + k_1 * r_d^2 + k_2 * r_d^3 + k_3 * r_d^4 + k_4 * r_d^5$,
+- The 3rd order polynomial in standard form: $r_u = r_d + k_1  r_d^3$
+- The 5th order polynomial in standard form: $r_u = r_d + k_1  r_d^3 + k_2  r_d^5$
+- The 5th order polynomial in all form: $r_u = r_d + k_1  r_d^2 + k_2  r_d^3 + k_3  r_d^4 + k_4  r_d^5$,
   where $r_d$ is the distance between the distorted pixel coordinates and the distortion center, $r_u$ is the distance between the distortion-corrected pixel coordinates and the distortion center.
 1. The 3rd order polynomial in standard form only works well for small amounts of distortion.
 2. The 5th order polynomial produce more accurate results, especially for “wave” or “mustache” distortion, which might resemble barrel near the center of the image and pincushion near the corners (or vice-versa).
@@ -47,9 +47,9 @@ The Standard Radial Distortion Model(SRDM) is defined by the distortion center a
 
 Basic formulas are as follows:
 
-$x_u - x_c = r_u * \cos(\theta) = r_u * (x_d - x_c)/r_d = ... $
+$x_u - x_c = r_u  \cos(\theta) = r_u  (x_d - x_c)/r_d = ... $
 
-$y_u - y_c = r_u * \sin(\theta) = r_u * (y_d - y_c)/r_d = ... $
+$y_u - y_c = r_u  \sin(\theta) = r_u  (y_d - y_c)/r_d = ... $
 
 where $(x_c,y_c)$ is the pixel coordinates of the distortion center.
 
@@ -115,8 +115,8 @@ Contour plot of the distortion in x and y components respectively:
 
 The Division-mode Radial Distortion Model defined by the distortion center and the distortion coefficients.
 
-- The 2nd order polynomial in division form: $r_u = r_d /(1+ k_1 * r_d^2)$
-- The 4th order polynomial in division form: $r_u = r_d /(1+ k_1 * r_d^2 + k_2 * r_d^4)$
+- The 2nd order polynomial in division form: $r_u = r_d /(1+ k_1  r_d^2)$
+- The 4th order polynomial in division form: $r_u = r_d /(1+ k_1  r_d^2 + k_2  r_d^4)$
 
 Basic formulas for DRDM are same as that for SRDM.
 
@@ -166,9 +166,9 @@ The Tangential Distortion Model(also known as the de-centering distortion) is de
 
 Basic formulas are as follows:
 
-$x_u = x_d + (P_1 * (r_d^2 + 2*(x_d - x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4 * r_d^4 + ...)$
+$x_u = x_d + (P_1  (r_d^2 + 2 (x_d - x_c)^2) + 2 P_2  (x_d-x_c) (y_d-y_c)) (1 + P_3  r_d^2 + P_4  r_d^4 + ...)$
 
-$y_u = y_d + (P_2 * (r_d^2 + 2*(y_d - y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3 * r_d^2 + P_4 * r_d^4 + ...)$
+$y_u = y_d + (P_2  (r_d^2 + 2 (y_d - y_c)^2) + 2 P_1  (x_d-x_c) (y_d-y_c)) (1 + P_3  r_d^2 + P_4  r_d^4 + ...)$
 
 ##### Construct a Tangential Distortion Model
 
@@ -216,9 +216,9 @@ The Brown–Conrady model corrects both the radial distortion and the tangential
 
 Basic formulas are as follows:
 
-$x_u = x_d + (x_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_1 * (r_d^2 + 2*(x_d-x_c)^2) + 2*P_2 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r_d^4 + ...)$
+$x_u = x_d + (x_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_1  (r_d^2 + 2  (x_d-x_c)^2) + 2  P_2  (x_d-x_c)  (y_d-y_c))  (1 + P_3  r_d^2 + P_4  r_d^4 + ...)$
 
-$y_u = y_d + (y_d - x_c) * (K_1*r_d^2 + K_2*r_d^4 + ...) + (P_2 * (r_d^2 + 2*(y_d-y_c)^2) + 2*P_1 * (x_d-x_c)*(y_d-y_c))*(1 + P_3*r_d^2 + P_4*r_d^4 + ...)$
+$y_u = y_d + (y_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_2  (r_d^2 + 2  (y_d-y_c)^2) + 2  P_1  (x_d-x_c)  (y_d-y_c))  (1 + P_3  r_d^2 + P_4  r_d^4 + ...)$
 
 ##### Construct a Brown–Conrady Distortion Model
 
