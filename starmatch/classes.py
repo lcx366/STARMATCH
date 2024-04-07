@@ -248,7 +248,7 @@ class Sources(object):
     
         return 'Instance of class Sources'
 
-    def invariantfeatures(self,max_control_points):
+    def invariantfeatures(self,max_control_points=None):
         """
         Given the max_control_points, carry out the following calculations:
         1. Calculate the unique invariants (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of centroids.
@@ -258,13 +258,13 @@ class Sources(object):
         Usage:
             >>> new_sources = sources.invariantfeatures(max_control_points)
         Inputs:
-            max_control_points -> [int] Maximum number of sources used to execute invariantfeatures
+            max_control_points -> [int,optional,default=None] Maximum number of sources used to execute invariant features
         Outputs:
             Updated sources
         """
         info = self.info.copy()
         n = len(self.xy_raw)
-        if max_control_points > n: max_control_points = n
+        if max_control_points is None or max_control_points > n: max_control_points = n
         if self.max_control_points != max_control_points:  
             xy = self.xy_raw[:max_control_points]
             invariants,asterisms,kdtree = invariantfeatures(xy)
@@ -312,7 +312,7 @@ class Sources(object):
 
         return fp_radec,pixel_width_estimate
 
-    def align(self,fp_radec,simplified_catalog,L=32,calibrate=False):
+    def align(self,fp_radec,simplified_catalog,max_num_per_tile=5,L=32,calibrate=False):
         """
         Given the approximate center pointing of the camera, find the mapping model between the source image and the star map. 
         The mapping model includes two types: the affine model without considering the geometric distortion and the affine model + distortion model.
@@ -352,7 +352,7 @@ class Sources(object):
         pixels_camera,flux_camera = self.xy,self.flux
 
         # Query Star Catalog around the fiducial point.
-        stars = simplified_catalog.search_cone(fp_radec,search_radius,max_control_points)
+        stars = simplified_catalog.search_cone(fp_radec,search_radius,max_control_points,max_num_per_tile)
         stars.pixel_xy(pixel_width) # Calculate the pixel coordinates of stars
         stars.invariantfeatures() # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs # Object of WCS transformation
@@ -370,7 +370,7 @@ class Sources(object):
         # Re-calculate the affine transform by the updated center pointing of the camera
         fp_radec_affine = cc_radec_estimate.ra.deg[0],cc_radec_estimate.dec.deg[0]
         if norm([pixels_cc_affine_x,pixels_cc_affine_y]) > min(res)/10:
-            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,max_control_points)
+            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,max_control_points,max_num_per_tile)
         else:
             stars.center = fp_radec_affine
 
@@ -439,7 +439,7 @@ class Sources(object):
         pixels_camera_affine = matrix_transform(self.xy_raw,affine_matrix)
         source_xymag = np.hstack([pixels_camera_affine/L,(C_affine - 2.5*np.log10(self.flux_raw))[:,None]])
         # In order to make the stars in catalog cover sources as much as possible, the number of stars in search area is expanded to twice that of sources
-        stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,2*len(self.xy_raw))
+        stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,2*len(self.xy_raw),max_num_per_tile)
         stars.pixel_xy(pixel_width) 
         catalog_df = stars.df
         catalog_xymag = np.hstack([stars.xy/L,stars.mag[:,None]])
