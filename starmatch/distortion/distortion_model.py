@@ -132,7 +132,6 @@ def Tangential(coeffs,dc,pixels_xy):
     2. https://www.imatest.com/docs/distortion-methods-and-modules/
     3. https://www.imatest.com/support/docs/pre-5-2/geometric-calibration-deprecated/distortion-models/ 
     """
-
     xdyd = pixels_xy
     xd,yd = xdyd.T
     xd_xc,yd_yc = xdyd_xcyc_T = (xdyd - dc).T
@@ -189,7 +188,6 @@ def Brown_Conrady(coeffs,dc,pixels_xy):
     2. https://www.imatest.com/docs/distortion-methods-and-modules/
     3. https://www.imatest.com/support/docs/pre-5-2/geometric-calibration-deprecated/distortion-models/ 
     """
-
     xc,yc = dc
     xdyd = pixels_xy
     xdyd_xcyc = xdyd - dc
@@ -245,4 +243,4 @@ def Brown_Conrady(coeffs,dc,pixels_xy):
     xuyu_t = np.stack([xu_t,yu_t]).T      
     xuyu = xuyu_r + xuyu_t
 
-    return xuyu          
+    return xuyu

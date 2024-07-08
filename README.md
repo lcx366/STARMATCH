@@ -2,7 +2,7 @@
 
 [![PyPI version shields.io](https://img.shields.io/pypi/v/starmatch.svg)](https://pypi.python.org/pypi/starmatch/) [![PyPI pyversions](https://img.shields.io/pypi/pyversions/starmatch.svg)](https://pypi.python.org/pypi/starmatch/) [![PyPI status](https://img.shields.io/pypi/status/starmatch.svg)](https://pypi.python.org/pypi/starmatch/) [![GitHub contributors](https://img.shields.io/github/contributors/lcx366/STARMATCH.svg)](https://GitHub.com/lcx366/STARMATCH/graphs/contributors/) [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/lcx366/STARMATCH/graphs/commit-activity) [![GitHub license](https://img.shields.io/github/license/lcx366/STARMATCH.svg)](https://github.com/lcx366/STARMATCH/blob/master/LICENSE) [![Documentation Status](https://readthedocs.org/projects/starmatch/badge/?version=latest)](http://starmatch.readthedocs.io/?badge=latest) [![Build Status](https://travis-ci.org/lcx366/starmatch.svg?branch=master)](https://travis-ci.org/lcx366/starmatch)
 
-This package is an archive of scientific routines for star map matching, camera center pointing calibration, distortion correction, astronomical positioning. Currently, key features of the package include:
+This package is an archive of scientific routines for star map matching, camera center pointing calibration, and distortion correction, and astronomical positioning. Currently, key features of the package include:
 
 1. Construct geometric distortion model/distortion-correction model for camera, and sketch the vector plot of distortion. Currently, supported distortion models include:
 - Standard Radial Distortion Model(SRDM)
@@ -25,6 +25,8 @@ pip install starmatch --upgrade # to upgrade a pre-existing installation
 ```
 
 ## How to use
+
+-----------------------------
 
 ### Geometric Distortion Model
 
@@ -260,262 +262,203 @@ $y_u = y_d + (y_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_2  (r_d^2 + 2  (y
   <img src="readme_figs/output_29_1.png" width="500" />
 </p>
 
-### Prelude to star map matching
+---------------------------------
+
+### Star Map matching for Astromonical Images
 
 Ahead of star map matching, a set of star catalog index files should be genarated using the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. For more details, please refer to [STARQUERY](https://github.com/lcx366/STARQUERY).
 
-#### Extract sources from images
-
-We use the python package `starextractor` to complete the source extraction, which can be installed by `pip install starextractor`. For more details, please refer to [STAREXTRACTOR](https://github.com/lcx366/STAREXTRACTOR).
-
-```python
->>> from starextractor import parse_image
->>> imagefile = 'obs/fits/img_00000.fits' #imagefile = 'obs/bmp/img_00000.bmp'
->>> data = parse_image(imagefile)
->>> sources = data.find_source()
->>> xy,flux = sources.xy,sources.brightness
-```
-
-Generate an object of `Sources` using pixel coordinates and flux(grayscale value) of sources, as is the entrance to star map matching and astronomical calibration.
-
-#### Load the sources to StarMatch
-
-```python
->>> from starmatch import StarMatch
->>> # set the FOV[deg], pixel width[deg], resolution of the camera
->>> camera_params = {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
->>> # We use the first 20 points to compute the triangle invariants involved in affine transformation. 
->>> # Usually these points are those sources that are brightest.
->>> sources1 = StarMatch.from_sources(xy,flux,camera_params,20) # No distortion corrected 
-```
-
-We get an object `sources1`  with
-
-```
-Attributes:
-    - xy_raw -> Pixel coordinates of sources
-    - flux_raw -> Flux(Grayscale value) of sources
-    - xy -> Pixel coordinates of sources truncated by max_control_points
-    - flux -> Flux(Grayscale value) of sources truncated by max_control_points
-    - invariants -> Array of (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of sources.
-    - asterisms -> Array of the indices of sources that correspond to invariant triangles.
-    - kdtree -> 2d-tree of triangel invariants for quick nearest-neighbor lookup
-    - max_control_points -> Maximum number of sources used to execute the star map matching
-    - _fov -> Field of View of camera in [deg]
-    - _pixel_width -> Pixel width of camera in [deg]
-    - _res -> Resolution of camera
-```
-
-### Star Map Matching
-
-Load the simplified HYG v3.5 star catalog.
+1. **Load the simplified star catalog**
 
 ```python
 >>> from starcatalogquery import StarCatalog
->>> # The following starcatalog path stores the tile files with size of 5 deg, stars magnitude less than 9.0, and proper motion correction to epoch of 2022.0.
->>> dir_from_simplified = 'starcatalogs/simplified/hygv35/res5/mag9.0/epoch2022.0/'
->>> hygv35_simplified = StarCatalog.load(dir_from_simplified)
+>>> # The following star catalog directory stores tile files with a size of 3.66 degrees, containing stars brighter than magnitude 12.0, with proper motion corrections applied to the epoch 2019.5.
+>>> dir_from_simplified = 'starcatalogs/simplified/at-hyg24/mag12.0/epoch2019.5/'
+>>> sc_simplified = StarCatalog.load(dir_from_simplified)
 ```
 
-#### Estimate the center pointing of the camera
+2. **Extract sources from images or files**
 
-We use the HYG v3.5 star catalog(Thanks to [David Nash](https://www.astronexus.com/hyg)) to genarate the h5-format index file according to the camera parameters(field of view, detected magnitude, observation time) with the python package starcatalogquery, which can be installed by `pip install starcatalogquery`. The h5-format index file records the center pointing of each sky area, the pixel coordinates, the triangle invariants and the asterism indices of the stars.
-
-##### Blind matching over star maps
+The python package `starextractor` can be used to implement the source extraction, which can be installed by `pip install starextractor`. For more details, please refer to [STAREXTRACTOR](https://github.com/lcx366/STAREXTRACTOR). For the sake of simplicity, here is a test file *test.txt* provided, which contains the pixel coordinates of the point sources in the image (with the origin located in the upper left corner of the image) and the grayscale values after deducting the background. **Note: The pixel coordinates have been arranged in descending order according to the brightness of the point source. If the pixel coordinates are not sorted, it is necessary to perform a sorting operation, unless it can be guaranteed that these point sources are the brightest dozens of stars in the captured image.**
 
 ```python
->>> fp_radec,pixel_width_estimate = sources1.center_pointing(hygv35_simplified)
->>> print(fp_radec,pixel_width_estimate) # (Ra,Dec) in [deg], pixel width in [deg]
->>> #fov = pixel_width_estimate * sources1._res
+>>> import numpy as np
+>>> data = np.loadtxt('obs/test.txt')
+>>> # Translate the origin of coordinates to the center of the image and normalize the coordinates of the point sources.
+>>> x = data[:, 0] - 512 # The resolution is (1024,1024)
+>>> y = 512 - data[:, 1]
+>>> xy = np.stack((x, y), axis=1)
+>>> flux = data[:, 2]
 ```
 
-##### Blind matching over star maps with the multi-core parallel computing
+3. **Load the data of sources and camera parameters into StarMatch**
 
 ```python
->>> fp_radec,pixel_width_estimate = sources1.center_pointing_mp(hygv35_simplified)
->>> print(fp_radec,pixel_width_estimate) 
+>>> from starmatch import StarMatch
+>>> # Configure the FOV[deg], pixel width[deg], and resolutions
+>>> camera_params = {'fov':(2,2),'pixel_width':0.002,'res':(1024,1024)} # {'res':(1024,1024)} for blind matching
+>>> # The top 30 brightest point sources are used to calculate the geometric invariants.
+>>> max_control_points=30
+>>> # Two methods for calculating geometric invariants are provided:
+>>> # 2-component 'triangles' generated by three stars and 4-component 'quads' generated by four stars.
+>>> mode_invariants = 'triangles'
+>>> sources = StarMatch.from_sources(xy,camera_params,flux_raw=flux,max_control_points=30,mode_invariants=mode_invariants) # No distortion correction is applied
 ```
 
-The actual center pointing of the camera is (204.01706216087143, 36.25274704575726), in order to test the tolerance ability of star map matching, we set the pointing point to [200,30]. 
+4. **Estimate the center pointing of the camera**
 
-Note: in process of star map matching, we set **L**(default=32) as the normalized length scale, namely, number of pixels in a unit length. It controls the tolerance of the 3D-Tree composed of (x,y,mag) of sources from camera and stars from catalog. For example, if the tolerance is set to 0.2(default), it means the difference within 0.2\*32=6.4 for pixel coordinates and 0.2 for magnitude is regarded as the correct matching.
-Another use of L is associated with the GPR(Gaussian Process Regression)-based distortion correction bellow. Experience has shown that normalizing the pixel coordinates by L is beneficial to the operation of GPR.
+**If the approximate orientation of the camera is known, this step can be skipped.**
 
 ```python
->>> fp_radec = [201,31]
->>> sources1.align(fp_radec,hygv35_simplified,L=32)
->>> # Instance of class Sources
+>>> k_min, k_max = 1,6 # Set the minimum and maximum HEALPix hierarchy level.
+>>> sc_simplified.h5_hashes(k_min, k_max, mode_invariants) # Establish a hashed file of geometric invariant in hdf5 format for the star catalog
+>>> sc_simplified.read_h5_hashes() # Read the star catalog hashed file
+>>> # Blind matching with multi-core parallel computing
+>>> fp_radec,pixel_width_estimate,fov_estimate = sources.center_pointing(sc_simplified)
+>>> print(fp_radec,pixel_width_estimate,fov_estimate) 
 ```
 
-We get object `sources1` updated with new attributes added:
-
-```
-- _wcs -> WCS transformation, which defines the projection relationship between pixel coordinates and celestial coordinates
-- fp_radec_affine -> Center pointing for affine transformations
-- affine_matrix -> Affine matrix in form of [[λcosα,λsinα,λtx],[−λsinα,λcosα,λty],[0,0,1]] 
-- _affine_translation -> Affine translation in form of [tx,ty]
-- _affine_rotation -> Rotation angle of affine transformations α in [rad]
-- _affine_scale -> Scale coefficient of affine transformations λ
-- _L -> The normalized length scale 
-- affine_results -> Instance of class Constructor, whose attributes include 
-    xy -> Affined pixel coordinates of affine-matched sources
-    xy_res -> Residuals of xy
-    xy_rms -> RMS of xy
-    mag_res -> Residuals of magnitudes for affine-matched sources
-    mag_rms -> RMS of magnitudes for affine-matched sources
-    C -> Magtitudes Constant for affine-matched sources
-    C_sigma -> Uncertainty of magtitudes Constant
-    catalog_df -> Pandas dataframe of matched stars for affine-matched sources
-    _description -> results description
-    pixels_camera_match -> Pixel coordinates of affine-matched sources
-    radec_res -> Residuals of celestial coordinates for affine-matched sources
-    radec_rms -> RMS of celestial coordinates for affine-matched sources
-- match_results -> Instance of class Constructor, whose attributes include 
-    xy ->  Affined pixel coordinates of 3D-Tree-matched sources
-    xy_res -> Residuals of xy
-    xy_rms -> RMS of xy
-    mag_res -> Residuals of magnitudes for 3D-Tree-matched sources
-    mag_rms -> RMS of magnitudes for 3D-Tree-matched sources
-    C -> Magtitudes Constant for 3D-Tree-matched sources
-    C_sigma -> Uncertainty of magtitudes Constant
-    catalog_df -> Pandas dataframe of matched stars for 3D-Tree-matched sources
-    _description -> results description
-    pixels_camera_match -> Pixel coordinates of 3D-Tree-matched sources
-    radec_res -> Residuals of celestial coordinates for 3D-Tree-matched sources
-    radec_rms -> RMS of celestial coordinates for 3D-Tree-matched sources
-```
-
-where the `affine_results` refers to the statistic information of the affine-matched sources, and `match_results` refers to the statistic information of 3D-Tree-matched sources. The column names of catalog_df are as follows:
-
-- 'ra': Ra of stars in star catalog
-- 'dec', Dec of stars in star catalog
-- 'mag', Magnitudes in star catalog
-- 'pixelx', x of stars in star catalog
-- 'pixely', y of stars in star catalog
-- 'dx', x of stars - x of sources affined
-- 'dy', y of stars - y of sources affined
-- 'dmag', mag of stars - mag of sources affined
-- 'x_camera', x of sources
-- 'y_camera', y of sources
-
-#### Show the matching stars on map
+5. **Star Map matching for Astronomical Images**
 
 ```python
->>> image_raw = sources.image_raw
->>> offset = sources.offset
->>> sources1.show_starmatch(image_raw,offset)
+>>> fp_radec = [141.8,-2] # Approximate orientation of the camera in form of [Ra,Dec] in degrees.
+>>> astrometry_corrections = {'t':'2019-02-26T20:11:14.347','proper-motion':None,'aberration':(0.55952273, -1.17780654,  7.50324956),'parallax':None}
+>>> sources.align(fp_radec,sc_simplified,astrometry_corrections=astrometry_corrections,distortion_calibrate='gpr')
+>>> print(sources)
+>>> # Affined results, where a small number of sources are used for initiating star map matching.
+>>> print(sources.affined_results)
+>>> # Matched results, where a large number of sources are used for enhancing star map matching
+>>> print(sources.matched_results)
+>>> # Calibrated results, where distortion is corrected based on the matched_results
+>>> print(sources.calibrated_results)
 ```
 
-<p align="middle">
-  <img src="readme_figs/output_52_0.png" width="500" />
-</p>
+About the astrometry corrections on star catalogs:
 
-The asterisks on the graph are consistent with the `catalog_df`.
+astrometry_corrections -> [dict] Dictionary specifying the types of corrections to apply.
 
-<p align="middle">
-  <img src="readme_figs/catalog_df.png" width="700" />
-</p>
+- 't' -> [str] Observation time in UTC, such as '2019-02-26T20:11:14.347'.
+   It specifies the time at which corrections are to be applied.
+- 'proper-motion' -> [None] If present, apply proper motion correction.
+   This term corrects for the motion of stars across the sky due to their velocities.
+- 'aberration' -> [tuple] Aberration correction parameters. Observer's velocity relative to Earth's center (vx, vy, vz) in km/s.
+   This term corrects for the apparent shift in star positions due to the motion of the observer.
+- 'parallax' -> [None] If present, apply parallax correction.
+   This term corrects for the apparent shift in star positions due to the change in observer's viewpoint as the Earth orbits the Sun.
+- 'deflection' -> [None] If present, apply light deflection correction.
+   This term corrects for the bending of light from stars due to the gravitational field of the Sun, based on general relativity.
 
-### Calibrate the orientation of the camera center
+About the distortion estimation and calibration:
+
+- 'gpr': Nonparametric Gaussian Process Regression(GPR).
+
+- 'piecewise-affine': The transform is based on a Delaunay triangulation of the points to form a mesh. Each triangle is used to find a local affine transform.
+
+- 'polynomial': 2D polynomial transformation with the following form
+  
+  $$
+  X = \sum_{j=0}^2\sum_{i=0}^j a_{ji} x^{j - i} y^i \\
+Y = \sum_{j=0}^2\sum_{i=0}^j b_{ji} x^{j - i} y^i   
+  $$
+
+About the `affine_results`/ `matched_results`/ `calibrated_results`:
+
+These results refer to the statistic information of the Star Map matching, and record the following attributes:
+
+- xy: Computed pixel coordinates of sources.  
+- xy_res: Residuals of pixel coordinates.  
+- xy_rms: RMS of of pixel coordinates.  
+- mag_res: Residuals of magnitudes of sources.  
+- mag_rms: RMS of magnitudes.  
+- C: Magnitudes constant.  
+- C_sigma: Uncertainty of magnitudes constant.  
+- catalog_df: DataFrame of matched stars.  
+- _description: Results description.  
+- pixels_camera_match: Pixel coordinates of sources.  
+- radec_res: Residuals of celestial coordinates.  
+- radec_rms: RMS of celestial coordinates.
+6. **Calibrate the orientation of the camera center**
 
 ```python
->>> sources1.fp_calibrate()
->>> print(sources1.fp_radec_calibrated)
->>> # [[204.01747112  36.25112389]]
->>> # Calibration from Astrometry.net is (13h 36m 04.207s,+36° 15' 03.012")
+>>> sources.fp_calibrate()
+>>> print(sources.fp_radec_calibrated)
 ```
 
-### Astronomical Positioning and Apparent Magnitude Estimation
+7. **Show distortion map**
 
-Estimate the celestial coordinates and magnitudes of unknown targets.
+The vector plot shows the distortion(displacement) where the sources are located.
 
 ```python
->>> xy_target,flux_target = [345,678],1e3 # [[345,678],[-278,521]],[1e3,2e4]
->>> radec,M_affine,M_match = sources1.apply(xy_target,flux_target)
->>> print(radec,M_affine,M_match)
->>> # [[199.83995525  31.44951982]] 8.036101294387004 8.011023843192229
->>> print(sources1.affine_results.mag_rms,sources1.match_results.mag_rms)
->>> # 0.08052914228287848 0.10371476611720697 
-```
-
-### Star Map Matching with geometric distortion considered
-
-#### Add distortion to raw sources
-
-Here, we add a Standard Radial distortion to raw sources to obtain distorted sources.
-
-```python
->>> from starmatch.classes import Distortion
->>> distortion = Distortion('RadialStandard',[1e-3,-1e-3],[0.1,0.1],256)
->>> xy_distorted = distortion.apply(sources.xy,pixel_scale=1)
-```
-
-#### Load the distorted sources to StarMatch
-
-Theoretically, for distorted images, a corresponding distortion correction model is usually provided. However, when the distortion model is unknown, we use the non-parametric Gaussian Process Regression(GPR) method to fit the distortion and obtain a non-parametric distortion model.
-
-```python
->>> # The following `distortion_correction_model` is the inverse of `distortion`, and the inverse transformation of the distortion model is not yet implemented.
->>> # sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20,distortion_correction_model)
->>> sources2 = StarMatch.from_sources(xy_distorted,flux,camera_params,20)
-```
-
-#### Star Map Matching
-
-```python
->>> sources2.align(fp_radec,hygv35_simplified,L=32,calibrate=True) 
->>> # Instance of class Sources
-```
-
-We get object `sources2` updated with new attributes added:
-
-```
-- _mx_L -> Normalized GPR model for distortion on x component
-- _my_L -> Normalized GPR model for distortion on y component  
-- calibrated_results -> Instance of class Constructor, whose attributes include 
-    xy -> Affined pixel coordinates for distortion-corrected sources
-    xy_res -> Residuals of xy
-    xy_rms -> RMS of xy
-    mag_res -> Same to that of match_results
-    mag_rms -> Same to that of match_results
-    C -> Same to that of match_results
-    C_sigma -> Same to that of match_results
-    catalog_df -> Pandas dataframe of matched stars for distortion-corrected sources
-    _description -> results description
-    pixels_camera_match -> Pixel coordinates of distortion-corrected sources
-    radec_res -> Residuals of celestial coordinates for distortion-corrected sources
-    radec_rms -> RMS of celestial coordinates for distortion-corrected sources
-```
-
-#### Distortion Map
-
-Show the distortion of the camera in modes of vector or contourf.
-
-##### Vector plot
-
-The vector plot shows the distortion where the sources are located.
-
-```python
->>> sources2.show_distortion('vector')
+>>> sources.show_distortion('vector')
 ```
 
 <p align="middle">
   <img src="readme_figs/output_70_1.png" width="500" />
 </p>
 
-##### Contour plot
-
-The following contour plot shows the distortion in the x and y directions, respectively.
+The contour plot shows the distortion in the x and y directions, respectively.
 
 ```python
->>> sources2.show_distortion('contourf')
+>>> sources.show_distortion('contourf')
 ```
 
 <p align="middle">
   <img src="readme_figs/output_73_1.png" width="800" />
 </p>
 
+### Astrometric Positioning and Magnitude Estimation
+
+Estimate celestial coordinates and apparent magnitudes of targets.
+
+```python
+>>> # Also normalize the coordinates of the targets as done for stars.
+>>> x_target,y_target = 125.717 - 512,512 - 397.795
+>>> xy_target = [x_target,y_target]
+>>> flux_target = 3003.62
+>>> radec,mag_affine,mag_match = sources.apply(xy_target,flux_target)
+```
+
+**Lastly, the estimated target celestial coordinates above represent the apparent position, not the true position. By applying corrections for aberration and light-time effect, the apparent position can be adjusted to the true position. This is especially important when the relative velocity between the observer and the space target is significant, as the deviation between the apparent direction and the true direction can reach several arcseconds. A straightforward approach is to apply a light-time (τ) offset to the observation time, with the target's apparent direction at the current time t being the same as its true direction at time t−τ.**
+
+----------------------------------
+
+### Show matching stars on image
+
+```python
+>>> from starextractor import parse_image
+>>> image_file = 'obs/fits/img_00000.fits' #image_file = 'obs/bmp/img_00000.bmp'
+>>> image_data = parse_image(image_file)
+>>> sources = image_data.find_source()
+>>> camera_params = {'fov':(8,8),'pixel_width':0.01,'res':(1024,1024)}
+>>> sources = StarMatch.from_sources(sources.xy,camera_params,flux_raw=sources.brightness)
+>>> fp_radec = [201,31]
+>>> sources.align(fp_radec,sc_simplified)
+>>> sources.show_starmatch(image_data.image_raw,image_data._offset)
+```
+
+<p align="middle">
+  <img src="readme_figs/output_52_0.png" width="500" />
+</p>
+
+Stars marked in the image are consistent with the `catalog_df`.
+
+```python
+print(sources.matched_results.catalog_df)
+```
+
+<p align="middle">
+  <img src="readme_figs/catalog_df.png" width="700" />
+</p>
+
 ## Change log
+
+- **0.2.0 — Jul 07, 2024**
+  
+  - Compatible with astronomical corrections, including proper motion, annual parallax, aberration, and light deflection.
+  - Added two distortion estimation methods:
+    - 'piecewise-affine': The transform is based on a Delaunay triangulation of the points to form a mesh. Each triangle is used to find a local affine transform.
+    - 'polynomial': 2D polynomial transformation.
+  - Implemented a star map blind matching algorithm for astronomical images, which can adapt to the field of view of images from tens of degrees to tens of arc minutes.
 
 - **0.1.4 — Sep 23, 2023**
   
@@ -537,10 +480,8 @@ The following contour plot shows the distortion in the x and y directions, respe
 
 ## Next release
 
-- Add aberration and light time correction
 - Find the inverse transformation of distortion models  
-- How to eliminate outliers in GPR
-- Solve the problem of wrong matching of source-star pairs for especially close point sources due to the large tolerance setting in 3D-Tree method
+- Eliminate outliers in GPR
 
 ## Reference
 

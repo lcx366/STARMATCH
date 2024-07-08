@@ -1,30 +1,33 @@
 import numpy as np
-from numpy.linalg import norm
+from numpy.linalg import norm,det
 from scipy.spatial import KDTree
+from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import MaxNLocator
-import GPy,copy
 from pathlib import Path
+from skimage.transform import PiecewiseAffineTransform,PolynomialTransform
+from starcatalogquery.invariantfeatures import calculate_invariantfeatures
+import GPy
 
-from .orientation import get_orientation,get_orientation_mp
-from .astroalign import invariantfeatures,find_transform_tree,matrix_transform
+from .orientation import get_orientation_mp
+from .astroalign import find_transform_tree,matrix_transform
 from .distortion import distortion_model
 from .plot import show_image
 
-def solidangle_ratio(fov,r):
+def solidangle_ratio(fov_min,r):
     """
     Calculate the ratio of the solid angles spanned by the square and the cone.
 
     Usage:
         >>> ratio = Solid_angles_ratio(8,10)
     Inputs:
-        fov -> [float] FOV of a camera in [deg] that determines a square
+        fov_min -> [float] FOV parameters of a camera in [deg] that determines a square
         r -> [float] Angular radius in [deg] that determines a cone
     Outputs:
         ratio -> [float] The ratio of the solid angles spanned by the square and the cone    
     """
-    fov_rad = np.deg2rad(fov)
+    fov_rad = np.deg2rad(fov_min)
     r_rad = np.deg2rad(r)
     Omega_square = 4*np.arcsin(np.tan(fov_rad/2)**2) # solid angles spanned by the square
     Omega_cone = 4*np.pi*np.sin(r_rad/2)**2 # solid angles spanned by the cone
@@ -32,15 +35,15 @@ def solidangle_ratio(fov,r):
 
 def radec_res_rms(wcs,xy,catalog_df):
     """
-    1. Given the WCS transformation, convert the pixel coordinates of stars to celestial coordinates.
-    2. Compare cthe calculated celestial coordinates with those in star catalog, then compute the residual and RMS of Ra and Dec components respectively.
+    1. Given the WCS transformation, convert the pixel coordinates of sources to celestial coordinates.
+    2. Compare cthe calculated celestial coordinates with those in star catalog, and compute the residuals and RMS of Ra and Dec components respectively.
 
     Usage:
         >>> radec_res,radec_rms = radec_res_rms(wcs,xy,catalog_df)
     Inputs:
-        wcs -> Object of class WCS, which defines the WCS transformation
-        xy -> [list(2 elements) or 2d array(n*2)] Pixel coordinates of stars
-        catalog_df -> Star catalog in form of pandas dataframe
+        wcs -> [Object of class WCS] WCS transformation system
+        xy -> [2d array (n*2)] Pixel coordinates of sources
+        catalog_df -> Star catalog in form of pandas.DataFrame
     Outputs:
         radec_res -> [2d array(n*2)] Residual of Ra and Dec components
         radec_rms -> [array(2 elements)] RMS of Ra and Dec components
@@ -57,78 +60,89 @@ def radec_res_rms(wcs,xy,catalog_df):
 
     return radec_res,radec_rms
 
-class Constructor(object):
+class ResultContainer(object):
     """
-    Class Constructor, mainly used to group and package the calculation results.
+    Class ResultContainer.
+    Group and package the calculation results.
+
+    Attributes:
+        _description -> [str] Description of the results.
+        catalog_df -> [pandas.DataFrame] DataFrame containing the matched stars data.
+        Additional attributes can be dynamically added from the info dictionary.
     """
-    def __init__(self,info):  
-
-        self.info = info
-
-        for key in info.keys():
-            setattr(self, key, info[key])
-
-    def __repr__(self):
-    
-        return self._description
-
-    def to_csv(self,path_catalog=None):
+    def __init__(self, info):
         """
-        Save catalog_df to a csv file.
-
-        Usage:
-            >>> path_catalog = sources.affine_results.to_csv()
-            >>> path_catalog = sources.match_results.to_csv(path_catalog)
-            >>> path_catalog = sources.calibrate_results.to_csv(path_catalog)
+        Initialize the ResultContainer instance with the provided information dictionary.
 
         Inputs:
-            path_catalog -> [str,optional,default=None] Path to save the csv file
-
-        Outputs:
-            path_catalog -> [str] Path of the csv file    
+            info -> [dict] Dictionary containing calculation results and their descriptions.
         """
-        df = self.catalog_df
+        self.__dict__.update(info)
 
-        if path_catalog is None: path_catalog = 'csv/starmatch.csv' 
-        Path(path_catalog).parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(path_catalog) # Save the pandas dataframe to a csv-formatted file    
+    def __repr__(self):
+        """
+        Return a string representation of the ResultContainer instance, showing the description.
 
-        return path_catalog
+        Returns:
+            str : Formatted string with key attributes of the ResultContainer instance.
+        """
+        mag_rms_str = "mag_rms = {:.2f}".format(self.mag_rms) if hasattr(self, 'mag_rms') else ""
+        xy_rms_str = "xy_rms = [{:.2f}, {:.2f}]".format(*self.xy_rms) if isinstance(self.xy_rms, np.ndarray) else "xy_rms = {:.2f}".format(self.xy_rms)
+        return "<ResultContainer object: {:s} {:s} radec_rms = [{:.4e}, {:.4e}] {:s}>".format(
+            self._description,xy_rms_str,*self.radec_rms,mag_rms_str)
+
+    def to_csv(self,path_res='csv/starmatch.csv'):
+        """
+        Save data frame of the calculation results to a csv-formatted file.
+
+        Usage:
+            >>> path_res = sources.affined_results.to_csv(path_res)
+            >>> path_res = sources.matched_results.to_csv(path_res)
+            >>> path_res = sources.calibrated_results.to_csv(path_res)
+        Inputs:
+            path_res -> [str,optional,default=None] Path to save the csv-formatted file
+        Outputs:
+            path_res -> [str] Path of the csv-formatted file
+        """
+        # Ensure the directory exists
+        Path(path_res).parent.mkdir(parents=True, exist_ok=True)
+
+        # Save the dataframe to a csv-formatted file
+        self.catalog_df.to_csv(path_res)
 
 class StarMatch(object):
     """
-    Class StarMatch, mainly used to generate an instance of class Sources as an entrance to star map matching and astronomical calibration.
+    Class StarMatch.
+    Generate an instance of class Sources as an entrance to star map matching and astronomical calibration.
     """
-
-    def from_sources(xy_raw,flux_raw,camera_params,max_control_points=20,distortion=None):
+    def from_sources(xy_raw,camera_params,flux_raw=None,max_control_points=30,mode_invariants='triangles',distortion=None):
         """
-        Generate an instance of class Sources using pixel coordinates and flux(grayscale value) of sources, as is the entrance to star map matching and astronomical calibration.
+        Generate an instance of the class Sources as an entry point to star map matching and astronomical calibration.
 
         Usage:
             >>> # Example 1: No distortion is considered
             >>> from starmatch import StarMatch
-            >>> # set the FOV[deg], pixel width[deg], resolution of the camera
-            >>> camera_params = {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
-            >>> # We use the first 20 points to compute the triangle invariants involved in affine transformation. 
-            >>> # Usually these points are those sources that are brightest.
-            >>> sources1 = StarMatch.from_sources(xy,flux,camera_params,20) # No distortion corrected 
-            >>>
+            >>> # Configure the FOV[deg], pixel width[deg], resolution of the camera
+            >>> camera_params = {'fov':(2,2),'pixel_width':0.002,'res':(1024,1024)}
+            >>> # We use the top 30 brightest sources to compute the triangle or quad geometric invariants.
+            >>> # For the case where distortion pre-correction is not considered
+            >>> sources1 = StarMatch.from_sources(xy_raw,camera_params,flux_raw=flux,max_control_points=30,mode_invariants='triangles')
             >>> # Example 2: 'Brown–Conrady' distortion is considered
             >>> from starmatch.classes import Distortion
-            >>> from starmatch import StarMatch
             >>> model = 'Brown–Conrady'
             >>> coeffs = [[-1e-4,1e-4],[1e-3,1e-3,1e-4,1e-5]]
             >>> dc = [0.1,0.1]
             >>> distortion_scale = 128
             >>> distortion = Distortion(model,coeffs,dc,distortion_scale)
-            >>> sources2 = StarMatch.from_sources(xy,flux,camera_params,20,distortion)
+            >>> sources2 = StarMatch.from_sources(xy_raw,camera_params,flux_raw=flux,max_control_points=30,mode_invariants='triangles',distortion=distortion)
         Inputs:
             xy_raw -> [2d array] Pixel coordinates of sources
-            flux_raw -> [array] Flux(Grayscale value) of sources
-            camera_params -> [dict] The necessary parameters of the camera, such as {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
+            camera_params -> [dict] The necessary parameters of the camera, such as {'fov':(2,2),'pixel_width':0.02,'res':(1024,1024)}
             where 'fov' and 'pixel_width' are in [deg], and 'res' represents the resolution of the camera.
-            max_control_points -> [int,optional,default=20] Maximum number of sources used to execute the star map matching
-            distortion -> Instance of class Distortion, which defines the distortion model
+            flux_raw -> [array,optional,default=None] Flux(Grayscale value) of sources. If None, skip the calculation of point source apparent magnitude.
+            max_control_points -> [int,optional,default=30] Maximum number of sources used to execute the star map matching.
+            mode_invariants -> [str] Mode of geometric invariants to use. Available options are 'triangles' or 'quads'.
+            distortion -> [Object of class Distortion, optional, default=None] Distortion model to use. If None, no distortion is applied.
         Outputs:
             sources -> Instance of class Sources, which includes the following attributes:
                 xy_raw -> [2d array, n*2] Pixel coordinates of sources
@@ -139,222 +153,229 @@ class StarMatch(object):
                 asterisms -> [2d array n*3] Array of the indices of sources that correspond to each invariant triangle.
                 kdtree -> [Instance of class scipy.spatial.KDTree] 2d-tree for quick nearest-neighbor lookup
                 max_control_points -> [int] Maximum number of sources used to execute the star map matching
-                _fov -> [float] Camera field of view in [deg]
+                _fov -> [2-ele tuple] Camera field of view in [deg], such as (2,2)
                 _pixel_width -> [float] Camera pixel size in [deg]
                 _res -> [tuple of int] Camera resolution
         Note:
-            When truncated by max_control_points, the sources need to be sorted from largest to smallest according to their fulx in advance.        
+            The sources need to be sorted in descending order according to their fulx in advance.
         """
-        fov,pixel_width,res = camera_params['fov'],camera_params['pixel_width'],camera_params['res']
+        # Extract camera parameters
+        fov = camera_params.get('fov', None)
+        pixel_width = camera_params.get('pixel_width', None)
+        res = camera_params['res']
 
-        # Distortion correction
+        # Apply distortion correction if a distortion model is provided
         if distortion is not None: xy_raw = distortion.apply(xy_raw,1)
-               
-        n = len(xy_raw)
-        if max_control_points > n: max_control_points = n
-        xy = xy_raw[:max_control_points]
-        flux = flux_raw[:max_control_points]
-        invariants,asterisms,kdtree = invariantfeatures(xy) # equivalent to invariants,asterisms,kdtree = invariantfeatures(xy_L)
 
-        dict_values = xy_raw,flux_raw,xy,flux,invariants,asterisms,kdtree,max_control_points,fov,pixel_width,np.array(res)
-        dict_keys = 'xy_raw','flux_raw','xy','flux','invariants','asterisms','kdtree','max_control_points','_fov','_pixel_width','_res'
-        info = dict(zip(dict_keys, dict_values))
+        # Truncate the number of control points if necessary
+        n = len(xy_raw)
+        max_control_points = min(max_control_points, n)
+        xy = xy_raw[:max_control_points]
+
+        if flux_raw is not None:
+            flux = flux_raw[:max_control_points]
+        else:
+            flux = flux_raw
+
+        # Calculate geometric invariants and construct KDTree
+        invariants,asterisms,kdtree = calculate_invariantfeatures(xy,mode_invariants)
+
+        # Create a dictionary of source information
+        info = {
+            'xy_raw': xy_raw,
+            'flux_raw': flux_raw,
+            'xy': xy,
+            'flux': flux,
+            'invariants': invariants,
+            'asterisms': asterisms,
+            'kdtree': kdtree,
+            'max_control_points': max_control_points,
+            '_fov': fov,
+            '_pixel_width': pixel_width,
+            '_res': np.array(res),
+            '_mode_invariants': mode_invariants
+        }
 
         return Sources(info)      
 
 class Sources(object):
     """
-    Class Sources
+    Class Sources represents a collection of star sources with their attributes and methods for star map matching and astronomical calibration.
+    It includes pixel coordinates, flux values, geometric invariants, and methods for computing these invariants and estimating the camera's center pointing.
 
     Attributes:
-        - xy_raw -> [2d array(n*2)] Pixel coordinates of sources
-        - flux_raw -> [array] Flux(Grayscale value) of sources
-        - xy -> [2d array(n*2)] Pixel coordinates of sources truncated by max_control_points
-        - flux -> [array] Flux(Grayscale value) of sources truncated by max_control_points
-        - invariants -> [2d array(m*2)] Array of (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of sources.
-        - asterisms -> [2d array(m*3)] Array of the indices of sources that correspond to invariant triangles.
-        - kdtree -> [Instance of class scipy.spatial.KDTree] 2d-tree of triangel invariants for quick nearest-neighbor lookup
-        - max_control_points -> [int] Maximum number of sources used to execute the star map matching
-        - _fov -> [float] Field of View of camera in [deg]
-        - _pixel_width -> [float] Pixel width of camera in [deg]
-        - _res -> [tuple of int] Resolution of camera
-        - _wcs -> object of class WCS, which defines the projection relationship between pixel coordinates and celestial coordinates
-        - fp_radec_affine -> [array] Center pointing for affine transformations
-        - affine_matrix -> [2d array] Affine matrix in form of [[λcosα,λsinα,λtx],[−λsinα,λcosα,λty],[0,0,1]]
-        - _affine_translation -> [array] Affine translation in form of [tx,ty]
-        - _affine_rotation -> [float] Rotation angle of affine transformations α in [rad]
-        - _affine_scale -> [float] Scale coefficient of affine transformations λ
-        - _L -> [int] The normalized length scale. 
-        - affine_results -> Instance of class Constructor, whose attributes include 
-            xy -> Affined pixel coordinates of affine-matched sources
-            xy_res -> Residuals of xy
-            xy_rms -> RMS of xy
-            mag_res -> Residuals of magnitudes for affine-matched sources
-            mag_rms -> RMS of magnitudes for affine-matched sources
-            C -> Magtitudes Constant for affine-matched sources
-            C_sigma -> Uncertainty of magtitudes Constant
-            catalog_df -> Pandas dataframe of matched stars for affine-matched sources
-            _description -> results description
-            pixels_camera_match -> Pixel coordinates of affine-matched sources
-            radec_res -> Residuals of celestial coordinates for affine-matched sources
-            radec_rms -> RMS of celestial coordinates for affine-matched sources
-        - match_results -> Instance of class Constructor, whose attributes include 
-            xy ->  Affined pixel coordinates of 3D-Tree-matched sources
-            xy_res -> Residuals of xy
-            xy_rms -> RMS of xy
-            mag_res -> Residuals of magnitudes for 3D-Tree-matched sources
-            mag_rms -> RMS of magnitudes for 3D-Tree-matched sources
-            C -> Magtitudes Constant for 3D-Tree-matched sources
-            C_sigma -> Uncertainty of magtitudes Constant
-            catalog_df -> Pandas dataframe of matched stars for 3D-Tree-matched sources
-            _description -> results description
-            pixels_camera_match -> Pixel coordinates of 3D-Tree-matched sources
-            radec_res -> Residuals of celestial coordinates for 3D-Tree-matched sources
-            radec_rms -> RMS of celestial coordinates for 3D-Tree-matched sources
-        - _mx_L -> Normalized GPR model in distortion of the x component
-        - _my_L -> Normalized GPR model in distortion of the y component  
-        - calibrated_results -> Instance of class Constructor, whose attributes include 
-            xy -> Affined pixel coordinates for distortion-corrected sources
-            xy_res -> Residuals of xy
-            xy_rms -> RMS of xy
-            mag_res -> Same to that of match_results
-            mag_rms -> Same to that of match_results
-            C -> Same to that of match_results
-            C_sigma -> Same to that of match_results
-            catalog_df -> Pandas dataframe of matched stars for distortion-corrected sources
-            _description -> results description
-            pixels_camera_match -> Pixel coordinates of distortion-corrected sources
-            radec_res -> Residuals of celestial coordinates for distortion-corrected sources
-            radec_rms -> RMS of celestial coordinates for distortion-corrected sources
- 
+        xy_raw -> [2d array (n, 2)] Pixel coordinates of sources.
+        flux_raw -> [array] Flux (grayscale value) of sources.
+        xy -> [2d array (n, 2)] Pixel coordinates of sources truncated by max_control_points.
+        flux -> [array] Flux (grayscale value) of sources truncated by max_control_points.
+        invariants -> [2d array (m, 2) or (m, 4)] Geometric invariants of sources.
+        Every three sources form a 2-component invariant, and every four sources form a 4-component invariant.
+        _mode_invariants -> [str] Mode of invariant of sources. 'triangles' and 'quads' are available.
+        asterisms -> [2d array (m, 3) or (m, 4)] Indices of sources that correspond to each invariant triangle.
+        kdtree -> [Object KDTree] 2D-tree of triangle invariants or 4D-tree of quad invariants for quick nearest-neighbor lookup.
+        max_control_points -> [int] Maximum number of sources used to execute the star map matching.
+        _fov -> [2-ele tuple] Field of view of the camera in degrees, such as (2,2).
+        _pixel_width -> [float] Pixel width of the camera in degrees.
+        _res -> [tuple of int] Resolution of the camera, such as [1024,1024].
+        _wcs -> [Object WCS] World Coordinate System that defines the projection relationship between pixel coordinates and celestial coordinates.
+        fp_radec_affine -> [2-ele array] Center pointing for 4-parameters affine transformations(similarity transformations).
+        affine_matrix -> [2d array (3, 3)] Affine matrix in the form of [[λcosα, λsinα, λtx], [-λsinα, λcosα, λty], [0, 0, 1]].
+        _affine_translation -> [2-ele array] Affine translation params in the form of [tx, ty].
+        _affine_rotation -> [float] Rotation angle of affine transformations in radians.
+        _affine_scale -> [float] Scale coefficient of affine transformations.
+        _L -> [int] Normalized length scale, used for normalizing pixel coordinates.
+        affined_results -> [Object ResultContainer] Affined results, where a small number of sources are used for initiating star map matching.
+        The results include
+            - xy -> [2d array (n, 2)] Affined pixel coordinates of sources.
+            - xy_res -> [2d array (n, 2)] Residuals of xy.
+            - xy_rms -> [2-ele array] RMS of xy.
+            - mag_res -> [float] Residuals of magnitudes of sources.
+            - mag_rms -> [float] RMS of magnitudes.
+            - C -> [float] Magnitudes constant.
+            - C_sigma -> [float] Uncertainty of magnitudes constant.
+            - catalog_df -> [pandas.DataFrame] DataFrame of matched stars.
+            - _description -> [str] Results description.
+            - pixels_camera_match -> [2d array (n, 2)] Pixel coordinates of matched sources.
+            - radec_res -> [2d array (n, 2)] Residuals of celestial coordinates.
+            - radec_rms -> [2-ele array] RMS of celestial coordinates.
+        matched_results -> [Object ResultContainer] Matched results, where a large number of sources are used for enhancing star map matching, similar to affined_results.
+        calibrated_results -> [Object ResultContainer] Calibrated results, where distortion is corrected based on the matched_results, similar to affined_results..
+
     Methods:
-        - invariantfeatures : Given the max_control_points, refresh the invariants, and 2D-Tree.   
-        - center_pointing : Obtain the center pointing of the camera through blind matching of star maps.
-        - center_pointing_mp : Obtain the center pointing of the camera through blind matching of star maps with the multi-core parallel computing.
-        - align : Given the approximate center pointing of the camera, find the mapping model between the source image and the star map. 
-        - apply : Apply the mapping model(affine model or calibration model) to unknown sources
-        - fp_calibrate : Calibrate the orientation of the camera center
-        - show_distortion : Show the distortion of the camera in modes of 'vector' or 'contourf'.
-        - show_starmatch : Mark the matching stars on the original image
-    """   
-    def __init__(self,info):  
+        invariantfeatures:
+            Calculate geometric invariants of sources and construct 2D-Tree from these invariants.
+        center_pointing:
+            Obtain the center pointing of the camera through blind matching of star maps with multi-core parallel computing.
+        align:
+            Find the mapping model between the sources and the stars.
+        apply:
+            Apply the mapping model to unknown sources.
+        fp_calibrate:
+            Calibrate the orientation of the camera center.
+        show_distortion:
+            Show the distortion of the camera.
+        show_starmatch:
+            Mark the matching stars on the original image.
+    """
 
-        self.info = info
+    def __init__(self, info):
+        """
+        Initialize the Sources instance with the provided information dictionary.
 
-        for key in info.keys():
-            setattr(self, key, info[key])
+        Inputs:
+            info -> [dict] Dictionary containing source attributes and their values.
+        """
+        self.__dict__.update(info)
 
     def __repr__(self):
-    
-        return 'Instance of class Sources'
+        """
+        Return a string representation of the Sources instance, including key attributes.
+
+        Returns:
+            str : Formatted string with key attributes of the Sources instance.
+        """
+        return "<Sources object: max_control_points = {:d}, res = {:}>".format(self.max_control_points,self._res)
 
     def invariantfeatures(self,max_control_points=None):
         """
-        Given the max_control_points, carry out the following calculations:
-        1. Calculate the unique invariants (L2/L1,L1/L0), where L2 >= L1 >= L0 are the three sides of the triangle composed of centroids.
-        2. Construct the 2D Tree from the the unique invariants.
-        3. Record an array of the indices of centroids that correspond to each invariant.
+        Computes geometric invariant features for a set of source points by generating unique triangles or quads.
+        These features are then used to build a KDTree for efficient matching.
 
         Usage:
             >>> new_sources = sources.invariantfeatures(max_control_points)
         Inputs:
-            max_control_points -> [int,optional,default=None] Maximum number of sources used to execute invariant features
+            max_control_points -> [int,optional,default=None] Maximum number of sources used to calculate invariant features.
+            If None, use all sources.
         Outputs:
-            Updated sources
+            Updated Object Sources
         """
-        info = self.info.copy()
+        info = self.__dict__.copy()
         n = len(self.xy_raw)
         if max_control_points is None or max_control_points > n: max_control_points = n
         if self.max_control_points != max_control_points:  
             xy = self.xy_raw[:max_control_points]
-            invariants,asterisms,kdtree = invariantfeatures(xy)
+            invariants,asterisms,kdtree = calculate_invariantfeatures(xy,self._mode_invariants)
             info.update({'xy':xy,'invariants':invariants,'asterisms':asterisms,'kdtree':kdtree,'max_control_points':max_control_points})
-        return Sources(info) 
+        return Sources(info)
 
-    def center_pointing(self,simplified_catalog,max_control_points=30):
-        """
-        Estimate the center pointing and pixel width of the camera through blind matching over star maps.
-
-        Usage:
-            >>> fp_radec,pixel_width = sources1.center_pointing(simplified_catalog)
-        Inputs:
-            simplified_catalog -> Instance of class StarCatalogSimplified
-            max_control_points -> [int,optional,default=30] Maxinum number of the stars sorted by brightness used for a sky area.
-        Outputs:
-            fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
-            pixel_width -> [float] Pixel width of camera in [deg]
-        """
-
-        indices_h5,mcp_ratio = simplified_catalog.h5_indices(self._fov,self._pixel_width,max_control_points)
-        max_control_points = round(max_control_points*mcp_ratio)
-        new_self = self.invariantfeatures(max_control_points) 
-        fp_radec,pixel_width_estimate = get_orientation(new_self.xy,new_self.asterisms,new_self.kdtree,new_self._pixel_width,indices_h5)
-
-        return fp_radec,pixel_width_estimate
-
-    def center_pointing_mp(self,simplified_catalog,max_control_points=30):
+    def center_pointing(self,simplified_catalog):
         """
         Estimate the center pointing of the camera through blind matching over star maps with the multi-core parallel computing.
 
         Usage:
-            >>> fp_radec,pixel_width = sources1.center_pointing_mp(simplified_catalog)
+            >>> k_min = 1 # Minimum HEALPix hierarchy level.
+            >>> k_max = 6 # Maximum HEALPix hierarchy level.
+            >>> mode_invariants = 'triangles' # alternative is 'quads'
+            >>> # Generate a h5-formatted star catalog geometric invariants hashed file.
+            >>> simplified_catalog.h5_hashes(k_min,k_max,mode_invariants) # Traverse from level 'K1' to level 'K11'
+            >>> # Read the hashed file
+            >>> simplified_catalog.read_h5_hashes()
+            >>> fp_radec,pixel_width_estimate,fov_estimate = sources.center_pointing(simplified_catalog)
         Inputs:
-            simplified_catalog -> Instance of class StarCatalogSimplified
-            max_control_points -> [int,optional,default=30] Maxinum number of the stars sorted by brightness used for a sky area.
+            simplified_catalog -> [Object StarCatalogSimplified] Simplified star catalog.
         Outputs:
             fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
-            pixel_width -> [float] Pixel width of camera in [deg]
+            pixel_width_estimate -> [float] Pixel width of camera in [deg]
+            fov_estimate -> [2-ele tuple] FOV of camera in [deg]
         """
-        indices_h5,mcp_ratio = simplified_catalog.h5_indices(self._fov,self._pixel_width,max_control_points)
-        max_control_points = round(max_control_points*mcp_ratio)  
-        new_self = self.invariantfeatures(max_control_points)
-        fp_radec,pixel_width_estimate = get_orientation_mp(new_self.xy,new_self.asterisms,new_self.kdtree,new_self._pixel_width,indices_h5)
+        # Check the mode of invariant features for both sources and star catalogs.
+        mode_invariants_sources = self._mode_invariants
+        mode_invariants_catalogs = simplified_catalog._mode_invariants
+        if mode_invariants_sources != mode_invariants_catalogs:
+            raise Exception("The mode of the invariant feature of ss is '{mode_invariants_sources}', while that of star catalog is '{mode_invariants_catalogs}'. The two are inconsistent.")
 
-        return fp_radec,pixel_width_estimate
+        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov, simplified_catalog.hashed_data)
+        fov_estimate = pixel_width_estimate * self._res
+        self._pixel_width = pixel_width_estimate
+        self._fov = fov_estimate
 
-    def align(self,fp_radec,simplified_catalog,max_num_per_tile=5,L=32,calibrate=False):
+        return fp_radec,pixel_width_estimate,fov_estimate
+
+    def align(self,fp_radec,simplified_catalog,max_num_per_tile=5,L=15,distortion_calibrate=None,astrometry_corrections={}):
         """
-        Given the approximate center pointing of the camera, find the mapping model between the source image and the star map. 
-        The mapping model includes two types: the affine model without considering the geometric distortion and the affine model + distortion model.
+        Given the approximate center pointing, find the mapping model between the sources in image and the stars in catalogs.
+
         Usage:
-            >>> # Example 1: with no distortion on pixel coordinates of sources
-            >>> from starmatch import StarMatch
-            >>> camera_params = {'fov':8,'pixel_width':0.01,'res':(1024,1024)}
-            >>> sources1 = StarMatch.from_sources(xy,flux,camera_params)
-            >>> # Load the simplified star catalog
-            >>> from starcatalogquery import StarCatalog
-            >>> dir_from_simplified = 'starcatalogs/simplified/hygv3/res5/mag9.0/epoch2022.0/'
-            >>> hygv3_simplified = StarCatalog.load('simplified','hygv3',5,dir_from_simplified)
-            >>> # star map matching
-            >>> fp_radec = [202,31] # [Ra,Dec] in [deg]
-            >>> sources1.align(fp_radec,hygv3_simplified)
-            >>> # Example 2: with 'Brown–Conrady' distortion on pixel coordinates of sources
-            >>> from starmatch.classes import Distortion
-            >>> from starmatch import StarMatch
-            >>> # Make a distortion correction
-            >>> sources2 = StarMatch.from_sources(xy,flux,camera_params,20,distortion)
-            >>> sources2.align(fp_radec,hygv3_simplified,L=32,calibrate=True)
+            >>> fp_radec = [141.8,-2] # The approximate center pointing [Ra,Dec] in [deg]
+            >>> astrometry_corrections = {'t':'2019-02-26T20:11:14.347','proper-motion':None,'aberration':(0.55952273, -1.17780654,  7.50324956),'parallax':None}
+            >>> sources.align(fp_radec,simplified_catalog,distortion_calibrate='gpr',astrometry_corrections=astrometry_corrections)
         Inputs:
-            fp_radec -> [tuple of float] Approximate center pointing of the camera in form of [Ra,Dec] in deg
-            simplified_catalog -> [Instance of class StarCatalogSimplified] The minimalist star catalog, which only includes the position and apparent magnitude of stars at a specific epoch
-            L -> [int,optional,default=32] The number of pixels in a unit length. It controls the tolerance of the 3D-Tree composed of (x,y,mag) for sources of camera and catalog
-            For example, if we set the tolerance to 0.2(default), it means the difference within 0.2*32=6.4 for pixel coordinates and 0.2 for magnitude is the correct matching, 
-            Another use is associated with the GPR-baed distortion correction. Experience has shown that normalizing the pixel coordinates by L is beneficial to the operation of GPR.
-            calibrate -> [bool,optional,default=False] Whether to perform a distortion correction. If False, no distortion correction is applied. If True, the distortion correction will be employed using the nonparametric Gaussian Process Regression(GPR) method.
+            fp_radec -> [tuple of float] Approximate center pointing of in form of [Ra,Dec] in deg
+            simplified_catalog -> [Object of class StarCatalogSimplified] A basic catalog created from the reduced catalog by applying magnitude truncation and proper motion correction, suitable for quick lookups.
+            max_num_per_tile -> [int, optional, default=5] Maximum number of stars to keep for each tile.
+            L -> [int,optional,default=15] The number of pixels in a unit length. It controls the tolerance of the 3D-Tree composed of (x,y,mag) for sources of camera and catalog
+            For example, if we set the tolerance to 0.2 and L to 15(default), it means the difference within 0.2*15=3 for pixel coordinates and 0.2 for magnitude is the correct matching,
+            distortion_calibrate -> [str,optional,default=None] If not None, the distortion correction will be employed. Available options are
+                - 'gpr': nonparametric Gaussian Process Regression(GPR).
+                - 'piecewise-affine': The transform is based on a Delaunay triangulation of the points to form a mesh. Each triangle is used to find a local affine transform.
+                - 'polynomial': 2D polynomial transformation with the following form
+
+                                X = sum[j=0:order]( sum[i=0:j]( a_ji * x**(j - i) * y**i ))
+                                Y = sum[j=0:order]( sum[i=0:j]( b_ji * x**(j - i) * y**i ))
+
+            astrometry_corrections -> [dict] Dictionary specifying the types of corrections to apply.
+                - 't' -> [str] Observation time in UTC, such as '2019-02-26T20:11:14.347'.
+                   It specifies the time at which corrections are to be applied.
+                - 'proper-motion' -> [None] If present, apply proper motion correction.
+                   This term corrects for the motion of stars across the sky due to their velocities.
+                - 'aberration' -> [tuple] Aberration correction parameters. Observer's velocity relative to Earth's center (vx, vy, vz) in km/s.
+                   This term corrects for the apparent shift in star positions due to the motion of the observer.
+                - 'parallax' -> [None] If present, apply parallax correction.
+                   This term corrects for the apparent shift in star positions due to the change in observer's viewpoint as the Earth orbits the Sun.
+                - 'deflection' -> [None] If present, apply light deflection correction.
+                   This term corrects for the bending of light from stars due to the gravitational field of the Sun, based on general relativity.
         Outputs:
-            updated self      
+            self : Updated instance with alignment and calibration results.
         """
         fov,pixel_width,res = self._fov,self._pixel_width,self._res
-        search_radius = 0.75*fov
-        ratio = solidangle_ratio(fov,search_radius)
-
-        max_control_points = int(self.max_control_points/ratio)
+        fov_min = min(fov)
+        search_radius = 0.75*fov_min
         pixels_camera,flux_camera = self.xy,self.flux
 
         # Query Star Catalog around the fiducial point.
-        stars = simplified_catalog.search_cone(fp_radec,search_radius,max_control_points,max_num_per_tile)
+        stars = simplified_catalog.search_cone(fp_radec,search_radius,fov_min,max_num_per_tile=max_num_per_tile,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) # Calculate the pixel coordinates of stars
-        stars.invariantfeatures() # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
+        stars.invariantfeatures(self._mode_invariants) # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs # Object of WCS transformation
 
         # Align sources from the camera and from the star catalog
@@ -370,13 +391,12 @@ class Sources(object):
         # Re-calculate the affine transform by the updated center pointing of the camera
         fp_radec_affine = cc_radec_estimate.ra.deg[0],cc_radec_estimate.dec.deg[0]
         if norm([pixels_cc_affine_x,pixels_cc_affine_y]) > min(res)/10:
-            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,max_control_points,max_num_per_tile)
+            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,fov_min,max_num_per_tile=max_num_per_tile,astrometry_corrections=astrometry_corrections)
         else:
             stars.center = fp_radec_affine
 
         stars.pixel_xy(pixel_width) 
-        stars.invariantfeatures() 
-        pixels_catalog = stars.xy
+        stars.invariantfeatures(self._mode_invariants)
         catalog_df = stars.df
         wcs = stars.wcs
 
@@ -385,190 +405,237 @@ class Sources(object):
         affine_matrix = transf.params
         affine_translation = transf.translation
         affine_rotation = transf.rotation # in radians
-        affine_scale = transf.scale
+        affine_scale = np.sqrt(det(affine_matrix[:2, :2])) # For similarity transform, it is equal to transf.scale
 
         _, ind_catalog_match, ind_catalog = np.intersect1d(pixels_catalog_match[:,0],stars.xy[:,0],return_indices=True)
         pixels_camera_match = pixels_camera_match[ind_catalog_match]
         pixels_catalog_match = pixels_catalog_match[ind_catalog_match]
         catalog_df_affine = catalog_df.loc[ind_catalog]
 
-        flux_camera_match = flux_camera[_s][ind_catalog_match]
         xy_affine = pixels_camera_affine = matrix_transform(pixels_camera_match,affine_matrix)
         xy_res_affine = pixels_catalog_match - pixels_camera_affine
         xy_rms_affine = np.sqrt(np.mean(xy_res_affine**2,axis=0))
-        catalog_df_affine[['dx','dy']] = xy_res_affine 
-
-        # M = C - 2.5log10(F), where C is an undetermined magnitude constant
-        C_affine = (2.5*np.log10(flux_camera_match) + catalog_df_affine['mag']).mean()
-        mag_res_affine = np.array(catalog_df_affine['mag']) -(C_affine - 2.5*np.log10(flux_camera_match))
-        mag_rms_affine = np.sqrt(np.mean(mag_res_affine**2))
-        n = len(mag_res_affine)
-        C_sigma_affine = np.sqrt(np.dot(mag_res_affine,mag_res_affine)/((n-1)*n))
-
-        catalog_df_affine['dmag'] = mag_res_affine 
-        catalog_df_affine[['x_camera','y_camera']] = pixels_camera_match
-
+        catalog_df_affine[['x_camera', 'y_camera']] = pixels_camera_match
+        catalog_df_affine[['dx','dy']] = xy_res_affine
         # Calculate the celestial coordinates of sources, and compare with the star catalog
         # Calculate the residual and RMS of the Ra and Dec components respectively.
         radec_res_affine,radec_rms_affine = radec_res_rms(wcs,xy_affine,catalog_df_affine)
 
+        info_affined_results_photometric = {}
+        if flux_camera is not None:
+            flux_camera_match = flux_camera[_s][ind_catalog_match]
+            # M = C - 2.5log10(F), where C is an undetermined magnitude constant
+            C_affine = (2.5*np.log10(flux_camera_match) + catalog_df_affine['mag']).mean()
+            mag_res_affine = np.array(catalog_df_affine['mag']) -(C_affine - 2.5*np.log10(flux_camera_match))
+            mag_rms_affine = np.sqrt(np.mean(mag_res_affine**2))
+            n = len(mag_res_affine)
+            C_sigma_affine = np.sqrt(np.dot(mag_res_affine,mag_res_affine)/((n-1)*n))
+            catalog_df_affine['dmag'] = mag_res_affine
+
+            dict_values = mag_res_affine, mag_rms_affine, C_affine, C_sigma_affine
+            dict_keys = 'mag_res', 'mag_rms', 'C', 'C_sigma'
+            info_affined_results_photometric = dict(zip(dict_keys, dict_values))
+
         # Group and package the calculation results for affined sources(pixel coordinates and flux).
-        description = 'Constructor of affine results'
-        dict_values = xy_affine,xy_res_affine,xy_rms_affine,mag_res_affine,mag_rms_affine,C_affine,C_sigma_affine,catalog_df_affine,description,pixels_camera_match,radec_res_affine,radec_rms_affine
-        dict_keys = 'xy','xy_res','xy_rms','mag_res','mag_rms','C','C_sigma','catalog_df','_description','pixels_camera_match','radec_res','radec_rms'
-        info_affine_results = dict(zip(dict_keys, dict_values))
-        affine_results = Constructor(info_affine_results)
-        self.info['affine_results'] = affine_results
-        self.affine_results = affine_results
+        description = 'affined results'
+        dict_values = xy_affine,xy_res_affine,xy_rms_affine,catalog_df_affine,description,pixels_camera_match,radec_res_affine,radec_rms_affine
+        dict_keys = 'xy','xy_res','xy_rms','catalog_df','_description','pixels_camera_match','radec_res','radec_rms'
+        info_affined_results_astrometric = dict(zip(dict_keys, dict_values))
+        info_affined_results = info_affined_results_astrometric | info_affined_results_photometric
+        affined_results = ResultContainer(info_affined_results)
 
         # Basic results for affine transformation
-        dict_values = wcs,fp_radec_affine,affine_matrix,affine_translation,affine_rotation,affine_scale,L,pixel_width,fov
-        dict_keys = '_wcs','fp_radec_affine','affine_matrix','_affine_translation','_affine_rotation','_affine_scale','_L','_pixel_width','_fov'
+        dict_values = affined_results,wcs,fp_radec_affine,affine_matrix,affine_translation,affine_rotation,affine_scale,L,pixel_width,fov
+        dict_keys = 'affined_results','_wcs','fp_radec_affine','affine_matrix','_affine_translation','_affine_rotation','_affine_scale','_L','_pixel_width','_fov'
         info_update = dict(zip(dict_keys, dict_values))
-        self.info.update(info_update)
-        self._wcs = wcs
-        self.fp_radec_affine = fp_radec_affine
-        self.affine_matrix = affine_matrix
-        self._affine_translation = affine_translation
-        self._affine_rotation = affine_rotation
-        self._affine_scale = affine_scale
-        self._L = L
+        self.__dict__.update(info_update)
 
         # This part replaces the sources of the affine matching with the sources of the 3D-Tree matching and performs calculations similar to the previous part.
         # Apply the affine matrix and the magnitude constant to all sources in camera image, then build a dimensionless 3D-Tree for camera and starcatalog 
         pixels_camera_affine = matrix_transform(self.xy_raw,affine_matrix)
-        source_xymag = np.hstack([pixels_camera_affine/L,(C_affine - 2.5*np.log10(self.flux_raw))[:,None]])
-        # In order to make the stars in catalog cover sources as much as possible, the number of stars in search area is expanded to twice that of sources
-        stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,2*len(self.xy_raw),max_num_per_tile)
+
+        # In order to make the stars in catalog cover sources as much as possible, the number of stars in search area is expanded to a ratio that of sources
+        ratio = solidangle_ratio(fov_min,search_radius)
+        max_num = int(len(self.xy_raw)/ratio)
+
+        stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,fov_min,max_num,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) 
         catalog_df = stars.df
-        catalog_xymag = np.hstack([stars.xy/L,stars.mag[:,None]])
+
+        if flux_camera is not None:
+            source_xymag = np.hstack([pixels_camera_affine / L, (C_affine - 2.5 * np.log10(self.flux_raw))[:, None]])
+            catalog_xymag = np.hstack([stars.xy/L,stars.mag[:,None]])
+        else:
+            source_xymag = pixels_camera_affine / L
+            catalog_xymag = stars.xy/L
+
         source_xymag_tree = KDTree(source_xymag)
         catalog_xymag_tree = KDTree(catalog_xymag)
         matches_list = source_xymag_tree.query_ball_tree(catalog_xymag_tree, r=0.2)
 
-        # Find the matching pairs
-        matches,matches_index_source,matches_index_catalog = [],[],[]
-        i = 0
-        for t1, t2_list in zip(source_xymag, matches_list):
-            if len(t2_list) == 1: 
+        # Initialize the matching lists
+        matches, matches_index_source, matches_index_catalog = [], [], []
+
+        # Find the matching pairs using enumerate and list comprehension
+        for i, (t1, t2_list) in enumerate(zip(source_xymag, matches_list)):
+            if len(t2_list) == 1:
                 matches_index_source.append(i)
                 matches_index_catalog.append(t2_list[0])
                 t2 = catalog_xymag_tree.data[t2_list[0]]
                 matches.append(list(zip(t1, t2)))
-            i += 1    
 
         pixels_camera_match = self.xy_raw[matches_index_source]
         catalog_df = catalog_df.loc[matches_index_catalog]
         matches = np.array(matches)
-        matches_res = (matches[:,:,1] - matches[:,:,0])
+        matches_source,matches_catalog = matches[:,:,0],matches[:, :, 1]
+        matches_res = matches_catalog - matches_source
 
-        xy_L = matches[:,:,0][:,:2]
+        xy_L_source = matches_source[:,:2]
+        xy_L_catalog = matches_catalog[:,:2]
         xy_res_L = matches_res[:,:2]
-        mag_res = matches_res[:,2]
-        xy = xy_L * L
+
+        xy_source = xy_L_source * L
+        xy_catalog = xy_L_catalog * L
         xy_res = xy_res_L * L
+
         xy_rms = np.sqrt(np.mean(xy_res**2,axis=0))
-        mag_rms = np.sqrt(np.mean(mag_res**2))
-
-        C = (2.5*np.log10(self.flux_raw[matches_index_source]) + catalog_df['mag']).mean()
-        n = len(mag_res)
-        C_sigma = np.sqrt(np.dot(mag_res,mag_res)/((n-1)*n))
-
+        catalog_df[['x_camera', 'y_camera']] = pixels_camera_match
         catalog_df[['dx','dy']] = xy_res
-        catalog_df['dmag'] = mag_res
-        catalog_df[['x_camera','y_camera']] = pixels_camera_match
-        radec_res,radec_rms = radec_res_rms(wcs,xy,catalog_df)
+        radec_res,radec_rms = radec_res_rms(wcs,xy_source,catalog_df)
+
+        info_matched_results_photometric = {}
+        if flux_camera is not None:
+            mag_res = matches_res[:, 2]
+            mag_rms = np.sqrt(np.mean(mag_res ** 2))
+
+            C = (2.5 * np.log10(self.flux_raw[matches_index_source]) + catalog_df['mag']).mean()
+            n = len(mag_res)
+            C_sigma = np.sqrt(np.dot(mag_res, mag_res) / ((n - 1) * n))
+            catalog_df['dmag'] = mag_res
+
+            dict_values = mag_res, mag_rms, C, C_sigma
+            dict_keys = 'mag_res', 'mag_rms', 'C', 'C_sigma'
+            info_matched_results_photometric = dict(zip(dict_keys, dict_values))
 
         # Group and package the calculation results for matched sources(pixel coordinates and flux).
-        description = 'Constructor of matchd results'
-        dict_values = xy,xy_res,xy_rms,mag_res,mag_rms,C,C_sigma,catalog_df,description,pixels_camera_match,radec_res,radec_rms
-        dict_keys = 'xy','xy_res','xy_rms','mag_res','mag_rms','C','C_sigma','catalog_df','_description','pixels_camera_match','radec_res','radec_rms'
-        info_match_results = dict(zip(dict_keys, dict_values))
-        match_results = Constructor(info_match_results)
-        self.info['match_results'] = match_results
-        self.match_results = match_results
+        description = 'matched results'
+        dict_values = xy_source,xy_res,xy_rms,catalog_df,description,pixels_camera_match,radec_res,radec_rms
+        dict_keys = 'xy','xy_res','xy_rms','catalog_df','_description','pixels_camera_match','radec_res','radec_rms'
+        info_matched_results_astrometric = dict(zip(dict_keys, dict_values))
+        info_matched_results = info_matched_results_astrometric | info_matched_results_photometric
+        matched_results = ResultContainer(info_matched_results)
 
         pixel_width_estimate = pixel_width*affine_scale
         fov_estimate = pixel_width_estimate * self._res
-        self.pixel_width_estimate = pixel_width_estimate
-        self.fov_estimate = fov_estimate
-        self.info.update(dict(zip(['pixel_width_estimate','fov_estmate'],[pixel_width_estimate,fov_estimate])))
+
+        dict_values = matched_results,pixel_width_estimate,fov_estimate
+        dict_keys = 'matched_results','pixel_width_estimate','fov_estmate'
+        info_update = dict(zip(dict_keys, dict_values))
+        self.__dict__.update(info_update)
 
         # Distortion correction
-        if calibrate:
-            # Normalize the coordinates
-            xy_L = xy/L
-            U_L = xy_res[:,0][:,None]/L
-            V_L = xy_res[:,1][:,None]/L
+        if distortion_calibrate is not None:
+            if distortion_calibrate in ['piecewise-affine','polynomial']:
+                if distortion_calibrate == 'piecewise-affine':
+                    tform = PiecewiseAffineTransform()
+                elif distortion_calibrate == 'polynomial':
+                    tform = PolynomialTransform()
+                tform.estimate(xy_source, xy_catalog)
+                xy_calibrated = tform(xy_source)
+                xy_res_calibrated = tform.residuals(xy_source, xy_catalog)
+                xy_rms_calibrated = np.sqrt(np.mean(xy_res_calibrated**2,axis=0))
 
-            # Define kernel
-            kerx = GPy.kern.RBF(2)
-            # Create simple GP model
-            mx_L = GPy.models.GPRegression(xy_L,U_L,kerx)
-            mx_L.optimize() 
-            mx_L.optimize_restarts(num_restarts = 100,verbose=False)
+                catalog_df_calibrated = catalog_df.copy()
+                catalog_df_calibrated['dr'] = xy_res_calibrated
+                radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
 
-            kery = GPy.kern.RBF(2)
-            my_L = GPy.models.GPRegression(xy_L,V_L,kery)
-            my_L.optimize() 
-            my_L.optimize_restarts(num_restarts = 100,verbose=False)
+                info_calibrated_results = matched_results.__dict__.copy()
+                description = f"calibrated results method = '{distortion_calibrate}'"
+                dict_values = xy_calibrated, xy_res_calibrated, xy_rms_calibrated, catalog_df_calibrated,radec_res_calibrated,radec_rms_calibrated,description,distortion_calibrate
+                dict_keys = 'xy', 'xy_res', 'xy_rms', 'catalog_df','radec_res','radec_rms','_description','_method'
+                info_calibrated_results.update(dict(zip(dict_keys, dict_values)))
+                calibrated_results = ResultContainer(info_calibrated_results)
 
-            self.info.update({'_mx_L':mx_L,'_my_L':my_L})
-            self._mx_L,self._my_L = mx_L,my_L
+                dict_values = calibrated_results,tform
+                dict_keys = 'calibrated_results','_tform'
+                info_update = dict(zip(dict_keys, dict_values))
+                self.__dict__.update(info_update)
 
-            meanx_L,varx_L = self._mx_L.predict(xy_L)
-            meany_L,vary_L = self._my_L.predict(xy_L)
+            elif distortion_calibrate == 'gpr':
+                L_GPR = 64  # Used to scale coordinates to avoid large squared distances between points
+                # Normalize the coordinates
+                xy_L = xy_source/L_GPR
+                U_L = xy_res[:,0][:,None]/L_GPR
+                V_L = xy_res[:,1][:,None]/L_GPR
 
-            distortion_fitted = np.hstack([meanx_L,meany_L]) * L
+                # Define kernel
+                kerx = GPy.kern.RBF(2)
+                # Create simple GP model
+                mx_L = GPy.models.GPRegression(xy_L,U_L,kerx)
+                mx_L.optimize()
+                #mx_L.optimize_restarts(num_restarts = 100,verbose=False)
 
-            xy_calibrated = xy + distortion_fitted
-            xy_res_calibrated = xy_res - distortion_fitted
-            xy_rms_calibrated = np.sqrt(np.mean(xy_res_calibrated**2,axis=0))
+                kery = GPy.kern.RBF(2)
+                my_L = GPy.models.GPRegression(xy_L,V_L,kery)
+                my_L.optimize()
+                #my_L.optimize_restarts(num_restarts = 100,verbose=False)
 
-            catalog_df_calibrated = catalog_df.copy()
-            catalog_df_calibrated[['dx','dy']] = xy_res_calibrated
-            radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
+                meanx_L,varx_L = mx_L.predict(xy_L)
+                meany_L,vary_L = my_L.predict(xy_L)
 
-            # Group and package the calculation results for calibrated sources(pixel coordinates).
-            calibrate_results = copy.deepcopy(match_results) 
-            calibrate_results.xy = xy_calibrated
-            calibrate_results.xy_res = xy_res_calibrated
-            calibrate_results.xy_rms = xy_rms_calibrated
-            calibrate_results.catalog_df = catalog_df_calibrated
-            calibrate_results.radec_res = radec_res_calibrated
-            calibrate_results.radec_rms = radec_rms_calibrated
-            calibrate_results._description = 'Constructor of calibrated results'
-            info_update = {'radec_res':radec_res_calibrated,'radec_rms':radec_rms_calibrated}
-            calibrate_results.info.update(info_update)
+                distortion_fitted = np.hstack([meanx_L,meany_L]) * L_GPR
 
-            self.info['calibrate_results'] = calibrate_results
-            self.calibrate_results = calibrate_results
+                xy_calibrated = xy_source + distortion_fitted
+                xy_res_calibrated = xy_res - distortion_fitted
+                xy_rms_calibrated = np.sqrt(np.mean(xy_res_calibrated**2,axis=0))
+
+                catalog_df_calibrated = catalog_df.copy()
+                catalog_df_calibrated[['dx','dy']] = xy_res_calibrated
+                radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
+
+                info_calibrated_results = matched_results.__dict__.copy()
+                description = f"calibrated results method = '{distortion_calibrate}'"
+                dict_values = xy_calibrated, xy_res_calibrated, xy_rms_calibrated, catalog_df_calibrated,radec_res_calibrated,radec_rms_calibrated,description,distortion_calibrate
+                dict_keys = 'xy', 'xy_res', 'xy_rms', 'catalog_df','radec_res','radec_rms','_description','_method'
+                info_calibrated_results.update(dict(zip(dict_keys, dict_values)))
+                calibrated_results = ResultContainer(info_calibrated_results)
+
+                dict_values = calibrated_results, mx_L, my_L, L_GPR
+                dict_keys = 'calibrated_results', '_mx_L', '_my_L', '_L_GPR'
+                info_update = dict(zip(dict_keys, dict_values))
+                self.__dict__.update(info_update)
+            else:
+                raise Exception("Unrecognized calibration method. Only 'gpr', 'piecewise-affine', and 'polynomial' are supported.")
 
         return self   
 
     def apply(self,xy_target,flux_target=None):
         """
-        Apply the mapping model(affine model or calibration model) to unknown sources
+        Apply the mapping model to unknown sources.
 
         Usage:
             >>> radec1,M1 = sources1.apply([-400,-400],5e3) 
             >>> radec2,M2 = sources2.apply([[-400,-400],[500,500]],[1e4,5e3])
-
         Inputs:
             xy_target -> [array] Pixel coordinates of unknown sources
             flux_target -> [array] Flux(Grayscale value) of unknown sources
+        Outputs:
+            radec -> [array] Estimated celestial coordinates (Ra, Dec) of the target sources.
+            M_affine -> [array, optional] Apparent magnitudes estimated from the affine model.
+            M_matched -> [array, optional] Apparent magnitudes estimated from the matched results.
         """
-
-        # Affine
+        # Apply the similarity transform (affine matrix)
         xy_target_affine = matrix_transform(xy_target,self.affine_matrix)
 
         # If a distortion calibration model exists
-        if hasattr(self,'_mx_L'):
-            meanx_L,varx_L = self._mx_L.predict(xy_target_affine/self._L)
-            meany_L,vary_L = self._my_L.predict(xy_target_affine/self._L)
-            mean_xy = np.hstack([meanx_L,meany_L]) * self._L
-            calibrated_xy = xy_target_affine + mean_xy 
+        if hasattr(self,'calibrated_results'):
+            if self.calibrated_results._method == 'gpr':
+                meanx_L,varx_L = self._mx_L.predict(xy_target_affine/self._L)
+                meany_L,vary_L = self._my_L.predict(xy_target_affine/self._L)
+                mean_xy = np.hstack([meanx_L,meany_L]) * self._L
+                calibrated_xy = xy_target_affine + mean_xy
+            elif self.calibrated_results._method in ['piecewise-affine','polynomial']:
+                calibrated_xy = self._tform(xy_target_affine)
         else:
             calibrated_xy = xy_target_affine
                 
@@ -579,24 +646,24 @@ class Sources(object):
 
         # Photometric
         if flux_target is not None:
-            M_affine = self.affine_results.C - 2.5*np.log10(flux_target)
-            M_matchd = self.match_results.C - 2.5*np.log10(flux_target)
+            M_affine = self.affined_results.C - 2.5*np.log10(flux_target)
+            M_matchd = self.matched_results.C - 2.5*np.log10(flux_target)
             return radec,M_affine,M_matchd
         else:
-            return radec    
+            return radec
 
     def fp_calibrate(self):
         """
         Calibrate the orientation of the camera center
 
         Usage:
-            >>> sources1.fp_calibrate()
-            >>> print(sources1.fp_radec_calibrated)
+            >>> sources.fp_calibrate()
+            >>> print(sources.fp_radec_calibrated)
+        Outputs:
+            self -> Updated instance with calibrated center pointing.
         """
         fp_radec_calibrated = self.apply([0,0])
-        info_update = {'fp_radec_calibrated':fp_radec_calibrated}
-        self.info.update(info_update)
-        self.fp_radec_calibrated = fp_radec_calibrated
+        self.fp_radec_calibrated = fp_radec_calibrated[0]
 
         return self
             
@@ -605,22 +672,22 @@ class Sources(object):
         Show the distortion of the camera.
 
         Usage:
-            >>> sources2.show_distortion('vector')
-            >>> sources2.show_distortion('contourf')
+            >>> sources.show_distortion('vector')
+            >>> sources.show_distortion('contourf')
         Inputs:
             mode -> [str,optional,default='vector'] The way of the distortion is displayed. Avaliable options include 'vector' plot and 'contourf' plot.  
             fig_file -> [str] Path to save the distortion map
         outputs:
-            distortion map
+            Distortion map displayed or saved to file.
         """
 
-        x,y = self.match_results.xy.T
-        u,v = self.match_results.xy_res.T
+        x,y = self.matched_results.xy.T
+        u,v = self.matched_results.xy_res.T
 
         plt.clf()
-
         ylim,xlim = self._res/2
-        # 'vector' plots
+
+        # 'vector' plot mode
         if mode == 'vector':
             fig = plt.figure(dpi=300)
             ax = fig.add_subplot(1, 1, 1)
@@ -631,38 +698,29 @@ class Sources(object):
             ax.set_ylim(-ylim, ylim)
             ax.tick_params(axis='both', which='major', labelsize=7)
 
-        # 'contourf' plots
-        elif mode == 'contourf':   
-            if not hasattr(self,'_mx_L'): raise Exception('No distortion correction is found')
+        # 'contourf' plot mode
+        elif mode == 'contourf':
             xx = np.linspace(-xlim, xlim, 50)
             yy = np.linspace(-ylim, ylim, 50)
             X, Y = np.meshgrid(xx, yy)
 
-            xx_L = xx/self._L
-            yy_L = yy/self._L
-            X_L, Y_L = np.meshgrid(xx_L, yy_L)
-
-            mesh_L = np.stack([X_L,Y_L]).transpose(1,2,0).reshape(-1,2)
-            meanx_L,varx_L = self._mx_L.predict(mesh_L)
-            meany_L,vary_L = self._my_L.predict(mesh_L)
-            meanx_L = meanx_L.reshape(50,50)
-            meany_L = meany_L.reshape(50,50)
-            mean_L = np.array([meanx_L,meany_L])
-            mean = mean_L * self._L
+            U = griddata(self.matched_results.xy, u, (X, Y), method='nearest')
+            V = griddata(self.matched_results.xy, v, (X, Y), method='nearest')
 
             fig = plt.figure(dpi=300)
             if xlim > 1.2*ylim:
                 axes = fig.subplots(2,1)
             else:
-                axes = fig.subplots(1,2)  
+                axes = fig.subplots(1,2)
 
+            mean = (U,V)
             for i in range(2):
-                if mean[i].max()*mean[i].min() < 0:
-                    abs_Z_max = np.abs(mean[i]).max()     
-                    Z_levels = np.linspace(-abs_Z_max,abs_Z_max, 51)
-                    cs = axes[i].contourf(X, Y, mean[i],levels = Z_levels,extend='both',cmap=plt.cm.RdBu_r) 
-                else:    
-                    cs = axes[i].contourf(X, Y, mean[i],extend='both') 
+                if mean[i].max() * mean[i].min() < 0:
+                    abs_Z_max = np.abs(mean[i]).max()
+                    Z_levels = np.linspace(-abs_Z_max, abs_Z_max, 51)
+                    cs = axes[i].contourf(X, Y, mean[i], levels=Z_levels, extend='both', cmap=plt.cm.RdBu_r)
+                else:
+                    cs = axes[i].contourf(X, Y, mean[i], extend='both')
 
                 divider = make_axes_locatable(axes[i])  
                 cax = divider.append_axes("right", size="5%", pad=0.05) 
@@ -688,8 +746,7 @@ class Sources(object):
         Mark the matching stars on the original image
 
         Usage:
-            sources1.show_starmatch(self,image_raw,offset)
-
+            >>> sources.show_starmatch(image_raw,offset)
         Inputs:
             image_raw -> [2d array of float] Raw grayscale image with origin at bottom left corner point
             offset -> [array of float] Pixel coordinates of the center of image
@@ -697,12 +754,12 @@ class Sources(object):
         Outputs:
             starmatch map  
         """
-        xy = self.match_results.pixels_camera_match + offset
-        text = self.match_results.catalog_df.index.astype(str)
+        xy = self.matched_results.pixels_camera_match + offset
+        text = self.matched_results.catalog_df.index.astype(str)
         if fig_out is None:
             plot_kwargs = {'mark':(xy,'s','red',text)}
         else:
-            plot_kwargs = {'mark':(xy,'s','red',text),'figname':fig_out}
+            plot_kwargs = {'mark':(xy,'s','red',text),'fig_path':fig_out}
         show_image(image_raw,origin='lower',**plot_kwargs)    
         
 class Distortion(object):
@@ -756,16 +813,19 @@ class Distortion(object):
         if model in model_list:
             info = {'model':model,'coeffs':coeffs,'dc':dc,'distortion_scale':distortion_scale}
         else:    
-            raise Exception('Distortion model should be one of {:s}'.format(str(model_list)))  
+            raise Exception('Distortion model should be one of {:s}'.format(str(model_list)))
 
-        self.info = info
-
-        for key in info.keys():
-            setattr(self, key, info[key])
+        self.__dict__.update(info)
 
     def __repr__(self):
-    
-        return 'Instance of class Distortion'
+        """
+        Return a string representation of the Distortion instance, including key attributes.
+
+        Returns:
+            str : Formatted string with key attributes of the Distortion instance.
+        """
+
+        return f"<Distortion object: model='{self.model}', distortion_scale={self.distortion_scale}>"
 
     def apply(self,pixels_xy,pixel_scale=1):
         """
@@ -811,7 +871,7 @@ class Distortion(object):
 
     def sketchmap(self,xlim,ylim,pixel_scale=1,mode='vector'):   
         """
-        Sketch the distortion.
+        Sketch the vector plot or contour plot of distortion.
 
         Usage:
             >>> xlim,ylim = 512,512
