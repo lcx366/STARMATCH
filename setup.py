@@ -2,7 +2,7 @@ from setuptools import setup,find_packages
 
 setup(
     name='starmatch',
-    version='0.2.0',
+    version='0.2.1',
     description='A package to handle the Star map matching and astrometric positioning',
     author='Chunxiao Li',
     author_email='lcx366@126.com',
@@ -30,6 +30,7 @@ setup(
         'scikit-image',
         'astropy',
         'GPy',
-        'starcatalogquery'
+        'starcatalogquery',
+        'loess'
         ],
 )

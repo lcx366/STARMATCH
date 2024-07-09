@@ -452,6 +452,12 @@ print(sources.matched_results.catalog_df)
 
 ## Change log
 
+- **0.2.1 — Jul 09, 2024**
+  
+  - Added two methods for outliers recognition in star map mismatching ahead of distortion calibration:
+    - 'lowess': Identifies outliers with the method of LOWESS (Locally Weighted Scatterplot Smoothing). LOWESS uses a weighted **linear regression** by default.
+    - 'iqr': Identifies outliers with the method of Interquartile Range (IQR).
+
 - **0.2.0 — Jul 07, 2024**
   
   - Compatible with astronomical corrections, including proper motion, annual parallax, aberration, and light deflection.

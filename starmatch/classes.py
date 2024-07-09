@@ -8,10 +8,12 @@ from matplotlib.ticker import MaxNLocator
 from pathlib import Path
 from skimage.transform import PiecewiseAffineTransform,PolynomialTransform
 from starcatalogquery.invariantfeatures import calculate_invariantfeatures
-import GPy
+from GPy.kern import RBF
+from GPy.models import GPRegression
 
 from .orientation import get_orientation_mp
 from .astroalign import find_transform_tree,matrix_transform
+from .preprocessing import lowess_smooth,iqr_outliers
 from .distortion import distortion_model
 from .plot import show_image
 
@@ -87,9 +89,8 @@ class ResultContainer(object):
             str : Formatted string with key attributes of the ResultContainer instance.
         """
         mag_rms_str = "mag_rms = {:.2f}".format(self.mag_rms) if hasattr(self, 'mag_rms') else ""
-        xy_rms_str = "xy_rms = [{:.2f}, {:.2f}]".format(*self.xy_rms) if isinstance(self.xy_rms, np.ndarray) else "xy_rms = {:.2f}".format(self.xy_rms)
-        return "<ResultContainer object: {:s} {:s} radec_rms = [{:.4e}, {:.4e}] {:s}>".format(
-            self._description,xy_rms_str,*self.radec_rms,mag_rms_str)
+        return "<ResultContainer object: {:s} {:s} xy_rms = [{:.2f}, {:.2f}] radec_rms = [{:.4e}, {:.4e}] {:s}>".format(
+            self._description,xy_rms_str,*self.xy_rms,*self.radec_rms,mag_rms_str)
 
     def to_csv(self,path_res='csv/starmatch.csv'):
         """
@@ -331,7 +332,7 @@ class Sources(object):
 
         return fp_radec,pixel_width_estimate,fov_estimate
 
-    def align(self,fp_radec,simplified_catalog,max_num_per_tile=5,L=15,distortion_calibrate=None,astrometry_corrections={}):
+    def align(self,fp_radec,simplified_catalog,max_num_per_tile=5,L=15,distortion_calibrate=None,astrometry_corrections={},outlier_remove='lowess'):
         """
         Given the approximate center pointing, find the mapping model between the sources in image and the stars in catalogs.
 
@@ -364,6 +365,9 @@ class Sources(object):
                    This term corrects for the apparent shift in star positions due to the change in observer's viewpoint as the Earth orbits the Sun.
                 - 'deflection' -> [None] If present, apply light deflection correction.
                    This term corrects for the bending of light from stars due to the gravitational field of the Sun, based on general relativity.
+            outlier_remove -> [str] Method of outlier removal. Available options are:
+                - 'lowess' -> Identifies outliers with the method of LOWESS (Locally Weighted Scatterplot Smoothing). Here, LOWESS uses a weighted **linear regression** by default.
+                - 'iqr' -> Identifies outliers with the method of Interquartile Range (IQR).
         Outputs:
             self : Updated instance with alignment and calibration results.
         """
@@ -498,6 +502,23 @@ class Sources(object):
         xy_catalog = xy_L_catalog * L
         xy_res = xy_res_L * L
 
+        # Detecting anomalies caused by mismatches
+        if outlier_remove == 'lowess':
+            flag_outliers = lowess_smooth(xy_L_source, xy_res)
+        elif outlier_remove == 'iqr':
+            flag_outliers = iqr_outliers(xy_res)
+        else:
+            raise ValueError('outlier_remove must be either "lowess" or "iqr".')
+        flag_inliers = ~flag_outliers
+
+        # Remove outliers
+        xy_res = xy_res[flag_inliers]
+        catalog_df = catalog_df[flag_inliers]
+        pixels_camera_match = pixels_camera_match[flag_inliers]
+        xy_source = xy_source[flag_inliers]
+        xy_catalog = xy_catalog[flag_inliers]
+        matches_res = matches_res[flag_inliers]
+
         xy_rms = np.sqrt(np.mean(xy_res**2,axis=0))
         catalog_df[['x_camera', 'y_camera']] = pixels_camera_match
         catalog_df[['dx','dy']] = xy_res
@@ -508,7 +529,7 @@ class Sources(object):
             mag_res = matches_res[:, 2]
             mag_rms = np.sqrt(np.mean(mag_res ** 2))
 
-            C = (2.5 * np.log10(self.flux_raw[matches_index_source]) + catalog_df['mag']).mean()
+            C = (2.5 * np.log10(self.flux_raw[matches_index_source][flag_inliers]) + catalog_df['mag']).mean()
             n = len(mag_res)
             C_sigma = np.sqrt(np.dot(mag_res, mag_res) / ((n - 1) * n))
             catalog_df['dmag'] = mag_res
@@ -542,11 +563,11 @@ class Sources(object):
                     tform = PolynomialTransform()
                 tform.estimate(xy_source, xy_catalog)
                 xy_calibrated = tform(xy_source)
-                xy_res_calibrated = tform.residuals(xy_source, xy_catalog)
+                xy_res_calibrated = xy_catalog - xy_calibrated
                 xy_rms_calibrated = np.sqrt(np.mean(xy_res_calibrated**2,axis=0))
 
                 catalog_df_calibrated = catalog_df.copy()
-                catalog_df_calibrated['dr'] = xy_res_calibrated
+                catalog_df_calibrated[['dx', 'dy']] = xy_res_calibrated
                 radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
 
                 info_calibrated_results = matched_results.__dict__.copy()
@@ -562,28 +583,22 @@ class Sources(object):
                 self.__dict__.update(info_update)
 
             elif distortion_calibrate == 'gpr':
-                L_GPR = 64  # Used to scale coordinates to avoid large squared distances between points
-                # Normalize the coordinates
-                xy_L = xy_source/L_GPR
-                U_L = xy_res[:,0][:,None]/L_GPR
-                V_L = xy_res[:,1][:,None]/L_GPR
+                L_GPR = 512  # Used to scale coordinates to avoid large squared distances between points
+                xy_L = xy_source/L_GPR # Normalize the coordinates
+                U,V = xy_res[None,:].T
 
-                # Define kernel
-                kerx = GPy.kern.RBF(2)
-                # Create simple GP model
-                mx_L = GPy.models.GPRegression(xy_L,U_L,kerx)
-                mx_L.optimize()
-                #mx_L.optimize_restarts(num_restarts = 100,verbose=False)
+                kerx = RBF(2) # Define 2D kernel for distortion along x axis
+                mx_L = GPRegression(xy_L,U,kerx) # Create simple GP model
+                mx_L.optimize() # Calculate the maximum likelihood solution of hyperparameters
 
-                kery = GPy.kern.RBF(2)
-                my_L = GPy.models.GPRegression(xy_L,V_L,kery)
+                kery = RBF(2) # Define 2D kernel for distortion along y axis
+                my_L = GPRegression(xy_L,V,kery)
                 my_L.optimize()
-                #my_L.optimize_restarts(num_restarts = 100,verbose=False)
 
-                meanx_L,varx_L = mx_L.predict(xy_L)
-                meany_L,vary_L = my_L.predict(xy_L)
+                meanx_L,varx_L = mx_L.predict(xy_L) # fitted distortion along x axis
+                meany_L,vary_L = my_L.predict(xy_L) # fitted distortion along y axis
 
-                distortion_fitted = np.hstack([meanx_L,meany_L]) * L_GPR
+                distortion_fitted = np.hstack([meanx_L,meany_L])
 
                 xy_calibrated = xy_source + distortion_fitted
                 xy_res_calibrated = xy_res - distortion_fitted
@@ -602,6 +617,7 @@ class Sources(object):
 
                 dict_values = calibrated_results, mx_L, my_L, L_GPR
                 dict_keys = 'calibrated_results', '_mx_L', '_my_L', '_L_GPR'
+
                 info_update = dict(zip(dict_keys, dict_values))
                 self.__dict__.update(info_update)
             else:
@@ -630,9 +646,9 @@ class Sources(object):
         # If a distortion calibration model exists
         if hasattr(self,'calibrated_results'):
             if self.calibrated_results._method == 'gpr':
-                meanx_L,varx_L = self._mx_L.predict(xy_target_affine/self._L)
-                meany_L,vary_L = self._my_L.predict(xy_target_affine/self._L)
-                mean_xy = np.hstack([meanx_L,meany_L]) * self._L
+                meanx_L,varx_L = self._mx_L.predict(xy_target_affine/self._L_GPR)
+                meany_L,vary_L = self._my_L.predict(xy_target_affine/self._L_GPR)
+                mean_xy = np.hstack([meanx_L,meany_L])
                 calibrated_xy = xy_target_affine + mean_xy
             elif self.calibrated_results._method in ['piecewise-affine','polynomial']:
                 calibrated_xy = self._tform(xy_target_affine)
