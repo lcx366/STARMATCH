@@ -424,6 +424,7 @@ class Sources(object):
         # Calculate the celestial coordinates of sources, and compare with the star catalog
         # Calculate the residual and RMS of the Ra and Dec components respectively.
         radec_res_affine,radec_rms_affine = radec_res_rms(wcs,xy_affine,catalog_df_affine)
+        catalog_df_affine[['dRa', 'dDec']] = radec_res_affine
 
         info_affined_results_photometric = {}
         if flux_camera is not None:
@@ -523,6 +524,7 @@ class Sources(object):
         catalog_df[['x_camera', 'y_camera']] = pixels_camera_match
         catalog_df[['dx','dy']] = xy_res
         radec_res,radec_rms = radec_res_rms(wcs,xy_source,catalog_df)
+        catalog_df[['dRa', 'dDec']] = radec_res
 
         info_matched_results_photometric = {}
         if flux_camera is not None:
@@ -569,6 +571,7 @@ class Sources(object):
                 catalog_df_calibrated = catalog_df.copy()
                 catalog_df_calibrated[['dx', 'dy']] = xy_res_calibrated
                 radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
+                catalog_df_calibrated[['dRa', 'dDec']] = radec_res_calibrated
 
                 info_calibrated_results = matched_results.__dict__.copy()
                 description = f"calibrated results method = '{distortion_calibrate}'"
