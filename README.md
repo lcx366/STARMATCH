@@ -356,10 +356,8 @@ About the distortion estimation and calibration:
 
 - 'polynomial': 2D polynomial transformation with the following form
   
-  $$
-  X = \sum_{j=0}^2\sum_{i=0}^j a_{ji} x^{j - i} y^i \\
-Y = \sum_{j=0}^2\sum_{i=0}^j b_{ji} x^{j - i} y^i   
-  $$
+  $X = \sum_{j=0}^2 \sum_{i=0}^j a_{ji} x^{j - i} y^i$
+  $Y = \sum_{j=0}^2 \sum_{i=0}^j b_{ji} x^{j - i} y^i$
 
 About the `affine_results`/ `matched_results`/ `calibrated_results`:
 
