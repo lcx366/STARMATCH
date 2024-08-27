@@ -6,7 +6,7 @@ from functools import partial
 
 from .astroalign import find_transform_tree,matrix_transform
 
-PIXEL_WIDTH_GUESS = 0.01 # Initial guess value of pixel width in deg
+PIXEL_WIDTH_GUESS = 0.001 # Initial guess value of pixel width in deg
 
 def generate_args_list(catalog_data):
     """
@@ -34,7 +34,7 @@ def generate_args_list(catalog_data):
 
     return args_list
 
-def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,hashed_data):
+def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,mode_invariants,min_matches_first,min_matches_second,simplified_catalog,hashed_data):
     """
     Obtain the center pointing and pixel width of the camera through blind matching of star maps with the multi-core parallel computing.
 
@@ -55,7 +55,7 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,hash
     # set the number of feasible cores
     number_of_cores = mp.cpu_count() - 1
 
-    params = (camera_xy,camera_asterisms,camera_invariant_tree)
+    params = (camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,min_matches_first,min_matches_second,simplified_catalog)
 
     # Divide tasks across multiple cores
     args = generate_args_list(hashed_data)
@@ -92,18 +92,15 @@ def find_transform_mp(params,arg):
         fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]
         pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
-    camera_xy,camera_asterisms,camera_invariant_tree = params
-    camera = (camera_xy,camera_asterisms,camera_invariant_tree)
+    camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,min_matches_first,min_matches_second,simplified_catalog = params
+    camera_tuple = (camera_xy,camera_asterisms,camera_invariant_tree)
+
     fp_radecs_i,stars_xy_i,stars_asterisms_i,stars_invariants_i = arg
+    stars_tuple = (stars_xy_i,stars_asterisms_i,KDTree(stars_invariants_i))
 
-    catalog_xy = stars_xy_i
-    catalog_asterisms = stars_asterisms_i
-    catalog_invariant_tree = KDTree(stars_invariants_i)
-
-    stars = (catalog_xy,catalog_asterisms,catalog_invariant_tree)
     # Align the sources in camera and the stars in catalog, and establish the mapping relationship.
     try:
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera,stars)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,stars_tuple,min_matches_first)
         # Roughly calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)  
         pixels_cc_affine_x,pixels_cc_affine_y = pixels_cc_affine[:,0],pixels_cc_affine[:,1]
@@ -117,7 +114,32 @@ def find_transform_mp(params,arg):
 
         # Estimate the pixel width
         pixel_width_estimate = PIXEL_WIDTH_GUESS * transf.scale
-        res = (fp_radec,pixel_width_estimate)
+        result = (fp_radec,pixel_width_estimate)
+
+        # Check the result
+        fov_min = min(res) * pixel_width_estimate
+        fov_max = max(res) * pixel_width_estimate
+        search_radius = 1.06 * fov_max
+
+        stars = simplified_catalog.search_cone(fp_radec, search_radius, fov_min, max_num_per_tile=5)
+        stars.pixel_xy(pixel_width_estimate)  # Calculate the pixel coordinates of stars
+        stars.invariantfeatures(mode_invariants)  # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
+        wcs = stars.wcs  # Object of WCS transformation
+        stars_tuple = (stars.xy, stars.asterisms, stars.kdtree)
+        transf, (pixels_camera_match, pixels_catalog_match), _s, _d = find_transform_tree(camera_tuple, stars_tuple,min_matches_second)
+
+        # Calibrate the center pointing of the camera
+        pixels_cc_affine = matrix_transform([0,0],transf.params)
+        pixels_cc_affine_x,pixels_cc_affine_y = pixels_cc_affine[:,0],pixels_cc_affine[:,1]
+
+        # Estimate the center pointing
+        cc_radec_estimate = wcs.pixel_to_world(pixels_cc_affine_x,pixels_cc_affine_y)
+        fp_radec = cc_radec_estimate.ra.deg[0],cc_radec_estimate.dec.deg[0]
+
+        # Estimate the pixel width
+        pixel_width_estimate *= transf.scale
+        result = (fp_radec,pixel_width_estimate)
     except:
-        res = None
-    return res
+        result = None
+        
+    return result

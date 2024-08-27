@@ -7,7 +7,6 @@ from numpy.linalg import norm
 from skimage.transform import estimate_transform,matrix_transform
 
 PIXEL_TOL = 3 # Pixel distance tolerance to assume two points are the same.
-MIN_MATCHES = 5 # Minimum number of triangles or quads matches to accept a transformation.
 
 class _MatchTransform:
     """
@@ -83,7 +82,7 @@ class _MatchTransform:
         error = resid.max(axis=1)
         return error
 
-def find_transform_tree(source, target, ttpte='similarity'):
+def find_transform_tree(source, target, min_matches, ttpte='similarity'):
     """
     Estimates a similarity transform that best maps source points to target points,
     including rotation, translation, and scaling, using RANSAC or direct fitting based on the number of matches.
@@ -97,6 +96,7 @@ def find_transform_tree(source, target, ttpte='similarity'):
             - a 2D array of (x, y) coordinates of target points
             - target asterisms
             - target invariant features KDTree.
+        min_matches -> [int] Minimum number of triangle or quad matches to accept a transformation.    
         ttpte -> [str,optional,default='similarity'] Type of transform. Available options are 'similarity' and 'affine'.
     Outputs:
         best_t -> The transformation object with transformation parameters - rotation, translation, and scale.
@@ -141,7 +141,7 @@ def find_transform_tree(source, target, ttpte='similarity'):
         inlier_ind = np.arange(n_invariants)
     else:
         # Use RANSAC to find the best model while excluding outliers
-        best_t, inlier_ind = _ransac(matches, inv_model, PIXEL_TOL, MIN_MATCHES) 
+        best_t, inlier_ind = _ransac(matches, inv_model, PIXEL_TOL, min_matches) 
 
     # Flatten the inlier matches to a 2D array for processing
     inlier_matches_flat = matches[inlier_ind].reshape(-1, 2)

@@ -89,8 +89,8 @@ class ResultContainer(object):
             str : Formatted string with key attributes of the ResultContainer instance.
         """
         mag_rms_str = "mag_rms = {:.2f}".format(self.mag_rms) if hasattr(self, 'mag_rms') else ""
-        return "<ResultContainer object: {:s} {:s} xy_rms = [{:.2f}, {:.2f}] radec_rms = [{:.4e}, {:.4e}] {:s}>".format(
-            self._description,xy_rms_str,*self.xy_rms,*self.radec_rms,mag_rms_str)
+        return "<ResultContainer object: {:s} xy_rms = [{:.2f}, {:.2f}] radec_rms = [{:.4e}, {:.4e}] {:s}>".format(
+            self._description,*self.xy_rms,*self.radec_rms,mag_rms_str)
 
     def to_csv(self,path_res='csv/starmatch.csv'):
         """
@@ -181,6 +181,13 @@ class StarMatch(object):
         # Calculate geometric invariants and construct KDTree
         invariants,asterisms,kdtree = calculate_invariantfeatures(xy,mode_invariants)
 
+        if mode_invariants == 'triangles':
+            min_matches_first = 6
+            min_matches_second = 12
+        elif mode_invariants == 'quads':
+            min_matches_first = 4
+            min_matches_second = 8
+
         # Create a dictionary of source information
         info = {
             'xy_raw': xy_raw,
@@ -194,7 +201,9 @@ class StarMatch(object):
             '_fov': fov,
             '_pixel_width': pixel_width,
             '_res': np.array(res),
-            '_mode_invariants': mode_invariants
+            '_mode_invariants': mode_invariants,
+            '_min_matches_first': min_matches_first,
+            '_min_matches_second': min_matches_second
         }
 
         return Sources(info)      
@@ -299,7 +308,7 @@ class Sources(object):
             info.update({'xy':xy,'invariants':invariants,'asterisms':asterisms,'kdtree':kdtree,'max_control_points':max_control_points})
         return Sources(info)
 
-    def center_pointing(self,simplified_catalog):
+    def center_pointing(self,sc_simplified_hashed):
         """
         Estimate the center pointing of the camera through blind matching over star maps with the multi-core parallel computing.
 
@@ -313,7 +322,7 @@ class Sources(object):
             >>> simplified_catalog.read_h5_hashes()
             >>> fp_radec,pixel_width_estimate,fov_estimate = sources.center_pointing(simplified_catalog)
         Inputs:
-            simplified_catalog -> [Object StarCatalogSimplified] Simplified star catalog.
+            sc_simplified_hashed -> [H5HashesData] An instance of H5HashesData containing the geometric invariants data.
         Outputs:
             fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
             pixel_width_estimate -> [float] Pixel width of camera in [deg]
@@ -321,11 +330,15 @@ class Sources(object):
         """
         # Check the mode of invariant features for both sources and star catalogs.
         mode_invariants_sources = self._mode_invariants
-        mode_invariants_catalogs = simplified_catalog._mode_invariants
+        mode_invariants_catalogs = sc_simplified_hashed.mode_invariants
         if mode_invariants_sources != mode_invariants_catalogs:
             raise Exception("The mode of the invariant feature of ss is '{mode_invariants_sources}', while that of star catalog is '{mode_invariants_catalogs}'. The two are inconsistent.")
 
-        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov, simplified_catalog.hashed_data)
+        hashed_data = sc_simplified_hashed.hashed_data
+        simplified_catalog = sc_simplified_hashed.sc_simplified
+
+        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov, self._res, self._mode_invariants,self._min_matches_first,self._min_matches_second,simplified_catalog,hashed_data)
+
         fov_estimate = pixel_width_estimate * self._res
         self._pixel_width = pixel_width_estimate
         self._fov = fov_estimate
@@ -372,8 +385,8 @@ class Sources(object):
             self : Updated instance with alignment and calibration results.
         """
         fov,pixel_width,res = self._fov,self._pixel_width,self._res
-        fov_min = min(fov)
-        search_radius = 0.75*fov_min
+        fov_min,fov_max = min(fov),max(fov)
+        search_radius = 1.06*fov_max
         pixels_camera,flux_camera = self.xy,self.flux
 
         # Query Star Catalog around the fiducial point.
@@ -385,7 +398,7 @@ class Sources(object):
         # Align sources from the camera and from the star catalog
         camera_tuple = (self.xy,self.asterisms,self.kdtree)
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,self._min_matches_first)
 
         # Roughly calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)  
@@ -405,7 +418,7 @@ class Sources(object):
         wcs = stars.wcs
 
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,self._min_matches_second)
         affine_matrix = transf.params
         affine_translation = transf.translation
         affine_rotation = transf.rotation # in radians
@@ -552,9 +565,18 @@ class Sources(object):
         fov_estimate = pixel_width_estimate * self._res
 
         dict_values = matched_results,pixel_width_estimate,fov_estimate
-        dict_keys = 'matched_results','pixel_width_estimate','fov_estmate'
+        dict_keys = 'matched_results','pixel_width_estimate','fov_estimate'
         info_update = dict(zip(dict_keys, dict_values))
         self.__dict__.update(info_update)
+
+        xy_calibrated = xy_source
+        xy_res_calibrated = xy_res
+        xy_rms_calibrated = xy_rms
+        catalog_df_calibrated = catalog_df
+        radec_res_calibrated = radec_res
+        radec_rms_calibrated = radec_rms
+        info_calibrated_results_photometric = info_matched_results_photometric
+
 
         # Distortion correction
         if distortion_calibrate is not None:
@@ -573,17 +595,7 @@ class Sources(object):
                 radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
                 catalog_df_calibrated[['dRa', 'dDec']] = radec_res_calibrated
 
-                info_calibrated_results = matched_results.__dict__.copy()
-                description = f"calibrated results method = '{distortion_calibrate}'"
-                dict_values = xy_calibrated, xy_res_calibrated, xy_rms_calibrated, catalog_df_calibrated,radec_res_calibrated,radec_rms_calibrated,description,distortion_calibrate
-                dict_keys = 'xy', 'xy_res', 'xy_rms', 'catalog_df','radec_res','radec_rms','_description','_method'
-                info_calibrated_results.update(dict(zip(dict_keys, dict_values)))
-                calibrated_results = ResultContainer(info_calibrated_results)
-
-                dict_values = calibrated_results,tform
-                dict_keys = 'calibrated_results','_tform'
-                info_update = dict(zip(dict_keys, dict_values))
-                self.__dict__.update(info_update)
+                self.__dict__.update({'_tform':tform})
 
             elif distortion_calibrate == 'gpr':
                 L_GPR = 512  # Used to scale coordinates to avoid large squared distances between points
@@ -611,22 +623,22 @@ class Sources(object):
                 catalog_df_calibrated[['dx','dy']] = xy_res_calibrated
                 radec_res_calibrated,radec_rms_calibrated = radec_res_rms(wcs,xy_calibrated,catalog_df_calibrated)
 
-                info_calibrated_results = matched_results.__dict__.copy()
-                description = f"calibrated results method = '{distortion_calibrate}'"
-                dict_values = xy_calibrated, xy_res_calibrated, xy_rms_calibrated, catalog_df_calibrated,radec_res_calibrated,radec_rms_calibrated,description,distortion_calibrate
-                dict_keys = 'xy', 'xy_res', 'xy_rms', 'catalog_df','radec_res','radec_rms','_description','_method'
-                info_calibrated_results.update(dict(zip(dict_keys, dict_values)))
-                calibrated_results = ResultContainer(info_calibrated_results)
-
-                dict_values = calibrated_results, mx_L, my_L, L_GPR
-                dict_keys = 'calibrated_results', '_mx_L', '_my_L', '_L_GPR'
-
-                info_update = dict(zip(dict_keys, dict_values))
-                self.__dict__.update(info_update)
+                self.__dict__.update({'_mx_L':mx_L,'_my_L':my_L,'_L_GPR':L_GPR})
             else:
                 raise Exception("Unrecognized calibration method. Only 'gpr', 'piecewise-affine', and 'polynomial' are supported.")
 
-        return self   
+        info_calibrated_results_astrometric = {
+            'xy': xy_calibrated,
+            'xy_res': xy_res_calibrated,
+            'xy_rms': xy_rms_calibrated,
+            'catalog_df': catalog_df_calibrated,
+            'radec_res': radec_res_calibrated,
+            'radec_rms': radec_rms_calibrated,
+            '_description': f"calibrated results method = '{distortion_calibrate}'",
+            '_method': distortion_calibrate
+        }
+        info_calibrated_results = info_calibrated_results_astrometric | info_calibrated_results_photometric
+        self.calibrated_results = ResultContainer(info_calibrated_results)   
 
     def apply(self,xy_target,flux_target=None):
         """
@@ -646,8 +658,11 @@ class Sources(object):
         # Apply the similarity transform (affine matrix)
         xy_target_affine = matrix_transform(xy_target,self.affine_matrix)
 
-        # If a distortion calibration model exists
+        # Apply distortion calibration if available
+        calibrated_xy = xy_target_affine  # Default to affine transformation
+
         if hasattr(self,'calibrated_results'):
+            # If a distortion calibration model exists
             if self.calibrated_results._method == 'gpr':
                 meanx_L,varx_L = self._mx_L.predict(xy_target_affine/self._L_GPR)
                 meany_L,vary_L = self._my_L.predict(xy_target_affine/self._L_GPR)
@@ -655,8 +670,6 @@ class Sources(object):
                 calibrated_xy = xy_target_affine + mean_xy
             elif self.calibrated_results._method in ['piecewise-affine','polynomial']:
                 calibrated_xy = self._tform(xy_target_affine)
-        else:
-            calibrated_xy = xy_target_affine
                 
         # Convert pixel coordinates to celestial coordinates
         radec_estimate = self._wcs.pixel_to_world(calibrated_xy[:,0],calibrated_xy[:,1])

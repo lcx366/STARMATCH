@@ -450,6 +450,10 @@ print(sources.matched_results.catalog_df)
 
 ## Change log
 
+- **0.2.2 — Aug 27, 2024**
+
+  - By adding a secondary test, the error rate of blind star map matching is significantly reduced.
+
 - **0.2.1 — Jul 09, 2024**
   
   - Added two methods for outliers recognition in star map mismatching ahead of distortion calibration:
@@ -484,8 +488,7 @@ print(sources.matched_results.catalog_df)
 
 ## Next release
 
-- Find the inverse transformation of distortion models  
-- Eliminate outliers in GPR
+- Find the inverse transformation of distortion models
 
 ## Reference
 
