@@ -116,8 +116,8 @@ Contour plot of the distortion in x and y components respectively:
 
 The Division-mode Radial Distortion Model defined by the distortion center and the distortion coefficients.
 
-- The 2nd order polynomial in division form: $r_u = r_d /(1+ k_1  r_d^2)$
-- The 4th order polynomial in division form: $r_u = r_d /(1+ k_1  r_d^2 + k_2  r_d^4)$
+- The 2nd order  in division form: $r_u = r_d /(1+ k_1  r_d^2)$
+- The 4th order  in division form: $r_u = r_d /(1+ k_1  r_d^2 + k_2  r_d^4)$
 
 Basic formulas for DRDM are same as that for SRDM.
 
@@ -358,6 +358,7 @@ About the distortion calibration:
 - 'polynomial': 2D polynomial transformation with the following form
   
   $X = \sum_{j=0}^2 \sum_{i=0}^j a_{ji} x^{j - i} y^i$
+  
   $Y = \sum_{j=0}^2 \sum_{i=0}^j b_{ji} x^{j - i} y^i$
 
 About the `affined_results`/ `matched_results`/ `calibrated_results`:
