@@ -6,7 +6,7 @@ import numpy as np
 from numpy.linalg import norm
 from skimage.transform import estimate_transform,matrix_transform
 
-PIXEL_TOL = 3 # Pixel distance tolerance to assume two points are the same.
+PIXEL_TOL = 30 # Pixel distance tolerance to assume two points are the same.
 
 class _MatchTransform:
     """

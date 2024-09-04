@@ -34,7 +34,7 @@ def generate_args_list(catalog_data):
 
     return args_list
 
-def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,mode_invariants,min_matches_first,min_matches_second,simplified_catalog,hashed_data):
+def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,mode_invariants,min_matches,simplified_catalog,hashed_data):
     """
     Obtain the center pointing and pixel width of the camera through blind matching of star maps with the multi-core parallel computing.
 
@@ -55,7 +55,7 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,
     # set the number of feasible cores
     number_of_cores = mp.cpu_count() - 1
 
-    params = (camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,min_matches_first,min_matches_second,simplified_catalog)
+    params = (camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,min_matches,simplified_catalog)
 
     # Divide tasks across multiple cores
     args = generate_args_list(hashed_data)
@@ -92,7 +92,7 @@ def find_transform_mp(params,arg):
         fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]
         pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
-    camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,min_matches_first,min_matches_second,simplified_catalog = params
+    camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,min_matches,simplified_catalog = params
     camera_tuple = (camera_xy,camera_asterisms,camera_invariant_tree)
 
     fp_radecs_i,stars_xy_i,stars_asterisms_i,stars_invariants_i = arg
@@ -100,7 +100,7 @@ def find_transform_mp(params,arg):
 
     # Align the sources in camera and the stars in catalog, and establish the mapping relationship.
     try:
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,stars_tuple,min_matches_first)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,stars_tuple,min_matches)
         # Roughly calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)  
         pixels_cc_affine_x,pixels_cc_affine_y = pixels_cc_affine[:,0],pixels_cc_affine[:,1]
@@ -126,7 +126,7 @@ def find_transform_mp(params,arg):
         stars.invariantfeatures(mode_invariants)  # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs  # Object of WCS transformation
         stars_tuple = (stars.xy, stars.asterisms, stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match), _s, _d = find_transform_tree(camera_tuple, stars_tuple,min_matches_second)
+        transf, (pixels_camera_match, pixels_catalog_match), _s, _d = find_transform_tree(camera_tuple, stars_tuple,min_matches*2)
 
         # Calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)
