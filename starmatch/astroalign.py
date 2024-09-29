@@ -210,7 +210,7 @@ def _ransac(data, model, thresh, min_matches):
             good_fit = model.fit(inliers)
             break
     if good_fit is None:
-        raise Exception("List of matching triangles exhausted before an acceptable transformation was found")
+        raise Exception("List of matching patterns exhausted before an acceptable transformation was found.")
     # Fit the model to the final set of inliers
     err = model.get_error(data, good_fit)
 

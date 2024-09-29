@@ -30,7 +30,8 @@ setup(
         'scikit-image',
         'astropy',
         'GPy',
-        'starcatalogquery',
-        'loess'
+        'statsmodels',
+        'loess',
+        'starcatalogquery'
         ],
 )

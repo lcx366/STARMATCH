@@ -11,6 +11,7 @@ from skimage.transform import PiecewiseAffineTransform,PolynomialTransform
 from starcatalogquery.invariantfeatures import calculate_invariantfeatures
 from GPy.kern import RBF
 from GPy.models import GPRegression
+import statsmodels.api as sm
 
 from .orientation import get_orientation_mp
 from .astroalign import find_transform_tree,matrix_transform
@@ -50,23 +51,39 @@ def photometric_model(F, C):
     """
     return C - 2.5 * np.log10(F)
 
-def solidangle_ratio(fov_min,r):
+def photometric_robust_linear_fit(F, M):
     """
-    Calculate the ratio of the solid angles spanned by the square and the cone.
+    Perform a robust linear fit to estimate the magnitude constant C and its uncertainty
+    based on observed fluxes F and apparent magnitudes M.
 
-    Usage:
-        >>> ratio = Solid_angles_ratio(8,10)
     Inputs:
-        fov_min -> [float] FOV parameters of a camera in [deg] that determines a square
-        r -> [float] Angular radius in [deg] that determines a cone
+        F -> [array-like,float] The radiative flux of the celestial objects.
+        M -> [array-like,float] The apparent magnitudes of the celestial objects.
     Outputs:
-        ratio -> [float] The ratio of the solid angles spanned by the square and the cone    
+        params -> [float] The estimated magnitude constant C.
+        params_err -> [float] The standard error (uncertainty) of the estimated C.
     """
-    fov_rad = np.deg2rad(fov_min)
-    r_rad = np.deg2rad(r)
-    Omega_square = 4*np.arcsin(np.tan(fov_rad/2)**2) # solid angles spanned by the square
-    Omega_cone = 4*np.pi*np.sin(r_rad/2)**2 # solid angles spanned by the cone
-    return Omega_square/Omega_cone
+
+    # Calculate the magnitude constant C for each observation.
+    # According to the photometric model: M = C - 2.5 * log10(F)
+    C = M + 2.5 * np.log10(F)
+
+    # Prepare the design matrix X for regression.
+    # Since we are estimating a constant C (intercept only), X is an array of ones.
+    X = np.ones_like(F)[:, None]
+
+    # Create a Robust Linear Model (RLM) using statsmodels.
+    # The RLM is used instead of ordinary least squares to reduce the influence of outliers.
+    rlm_model = sm.RLM(C, X)
+
+    # Fit the model to estimate the parameter(s).
+    rlm_results = rlm_model.fit()
+
+    # Extract the estimated parameter (C) and its standard error (uncertainty).
+    params, = rlm_results.params
+    params_err, = rlm_results.bse
+
+    return params, params_err
 
 def radec_res_rms(wcs,xy,catalog_df):
     """
@@ -469,18 +486,13 @@ class Sources(object):
         if flux_camera is not None:
             flux_camera_match = flux_camera[_s][ind_catalog_match]
 
-            # Calculate the initial value of the magnitude constant
-            C_initial = (2.5 * np.log10(flux_camera_match) + catalog_df_affine['mag']).mean()
-
-            # The parameters of the photometric model (magnitude constant) were fitted using the least squares method.
-            C_affine, C_affine_var = curve_fit(photometric_model, flux_camera_match,catalog_df_affine['mag'], p0=[C_initial])
+            # Parameters of the photometric model (magnitude constant) are fitted using the robust linear least squares method.
+            C_affine, C_sigma_affine = photometric_robust_linear_fit(flux_camera_match, catalog_df_affine['mag'])
 
             # Calculate the magnitude residual
             mag_res_affine = catalog_df_affine['mag'].values - photometric_model(flux_camera_match, C_affine)
             # Calculate RMS of the magnitude residual
             mag_rms_affine = np.sqrt(np.mean(mag_res_affine ** 2))
-            # Calculate the uncertainty in magnitude constant
-            C_sigma_affine = np.sqrt(C_affine_var.item())
 
             catalog_df_affine['dmag'] = mag_res_affine
             dict_values = mag_res_affine, mag_rms_affine, C_affine, C_sigma_affine
@@ -504,12 +516,7 @@ class Sources(object):
         # This part replaces the sources of the affine matching with the sources of the 3D-Tree matching and performs calculations similar to the previous part.
         # Apply the affine matrix and the magnitude constant to all sources in camera image, then build a dimensionless 3D-Tree for camera and starcatalog 
         pixels_camera_affine = matrix_transform(self.xy_raw,affine_matrix)
-
-        # In order to make the stars in catalog cover sources as much as possible, the number of stars in search area is expanded to a ratio that of sources
-        ratio = solidangle_ratio(fov_min,search_radius)
-        max_num = int(len(self.xy_raw)/ratio)
-
-        stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,fov_min,max_num,astrometry_corrections=astrometry_corrections)
+        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 2, fov_min/2, max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) 
         catalog_df = stars.df
 
@@ -575,7 +582,7 @@ class Sources(object):
         if flux_camera is not None:
             # The parameters of the photometric model (magnitude constant) were fitted using the least squares method.
             C, C_var = curve_fit(photometric_model,self.flux_raw[matches_index_source][flag_inliers],catalog_df['mag'],p0=[C_affine])
-            # Calculate RMS of the magnitude residual
+            # Calculate the magnitude residual
             mag_res = catalog_df['mag'].values - photometric_model(self.flux_raw[matches_index_source][flag_inliers], C)
             # Calculate RMS of the magnitude residual
             mag_rms = np.sqrt(np.mean(mag_res ** 2))

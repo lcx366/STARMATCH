@@ -468,6 +468,12 @@ print(sources.matched_results.catalog_df)
 
 ## Change log
 
+- **0.2.4 — Sep 29, 2024**
+  
+  - In order to fit the distortion model, it is necessary to select as many stars as possible in the field of view. However, considering the computational speed budget, the selection of all stars is modified to select evenly distributed bright stars.
+  - The RLM(Robust Linear Model) is used instead of ordinary least squares to estimate the magnitude constant C and its uncertainty
+    based on observed fluxes and apparent magnitudes.
+
 - **0.2.3 — Sep 03, 2024**
   
   - Improved WCS transform.

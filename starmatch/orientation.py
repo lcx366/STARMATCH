@@ -77,6 +77,8 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,
             for result in result_objects:
                 if result:  # Assuming result is not None if successful
                     return result  # Return the successful result immediately  
+            # If no valid result was found, raise an exception
+            raise Exception("List of matching patterns exhausted before an acceptable transformation was found.")        
         finally:
             pool.terminate()  # Terminate all processes immediately
             pool.join()  # Wait for the worker processes to terminate
