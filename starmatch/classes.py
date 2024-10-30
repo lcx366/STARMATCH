@@ -97,8 +97,8 @@ def radec_res_rms(wcs,xy,catalog_df):
         xy -> [2d array (n*2)] Pixel coordinates of sources
         catalog_df -> Star catalog in form of pandas.DataFrame
     Outputs:
-        radec_res -> [2d array(n*2)] Residual of Ra and Dec components
-        radec_rms -> [array(2 elements)] RMS of Ra and Dec components
+        radec_res -> [2d array(n*2)] Residual of Ra and Dec in arcseconds
+        radec_rms -> [array(2 elements)] RMS of Ra and Dec in arcseconds
     """
     # Convert the pixel coordinates of stars to celestial coordinates
     ra_estimate,dec_estimate = wcs.pixel_to_world_values(xy[:,0],xy[:,1])
@@ -106,6 +106,7 @@ def radec_res_rms(wcs,xy,catalog_df):
     radec_res = catalog_df[['ra','dec']].values - np.stack([ra_estimate,dec_estimate]).T
     # Metric correction for residual of Ra components
     radec_res[:,0] *=  np.cos(np.deg2rad(dec_estimate))
+    radec_res *= 3600 # Convert degrees to arcseconds
     # Calculate the RMS of Ra and Dec components
     radec_rms = np.sqrt(np.mean(radec_res**2,axis=0))
 
@@ -113,8 +114,7 @@ def radec_res_rms(wcs,xy,catalog_df):
 
 class ResultContainer(object):
     """
-    Class ResultContainer.
-    Group and package the calculation results.
+    Group the calculation results.
 
     Attributes:
         _description -> [str] Description of the results.
@@ -316,9 +316,6 @@ class Sources(object):
     def __init__(self, info):
         """
         Initialize the Sources instance with the provided information dictionary.
-
-        Inputs:
-            info -> [dict] Dictionary containing source attributes and their values.
         """
         self.__dict__.update(info)
 
@@ -516,7 +513,7 @@ class Sources(object):
         # This part replaces the sources of the affine matching with the sources of the 3D-Tree matching and performs calculations similar to the previous part.
         # Apply the affine matrix and the magnitude constant to all sources in camera image, then build a dimensionless 3D-Tree for camera and starcatalog 
         pixels_camera_affine = matrix_transform(self.xy_raw,affine_matrix)
-        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 2, fov_min/2, max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 1.5, fov_min/2, max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) 
         catalog_df = stars.df
 
@@ -891,10 +888,7 @@ class Distortion(object):
 
     def __repr__(self):
         """
-        Return a string representation of the Distortion instance, including key attributes.
-
-        Returns:
-            str : Formatted string with key attributes of the Distortion instance.
+        Formatted string with key attributes of the Distortion instance.
         """
 
         return f"<Distortion object: model='{self.model}', distortion_scale={self.distortion_scale}>"

@@ -1,28 +1,47 @@
 import numpy as np
 from loess.loess_2d import loess_2d
+from statsmodels.robust.scale import mad
 
-W = 0.34 # Weights less than W are identified as outliers. Outliers are defined as those with deviations > 4sigma.
-def lowess_smooth(xy,UV,frac=0.5):
+def lowess_smooth(xy, UV, frac=0.5):
     """
-    Identify outliers in star map matching with the method of LOWESS (Locally Weighted Scatterplot Smoothing).
-    Here, LOWESS uses a weighted **linear regression** by default.
+    Identify outliers in star map matching using the method of LOWESS (Locally Weighted Scatterplot Smoothing).
+    LOWESS uses a weighted **linear regression** to fit the data locally.
 
     Usage:
-        >>> is_outlier = lowess_smooth(xy,UV)
+        >>> is_outlier = lowess_smooth(xy, UV, frac=0.5)
     Inputs:
-        xy -> [2D array] Coordinates of sources with shape of (n,2)
-        UV -> [2D array] Distortion with shape of (n,2)
-        frac -> [float,optional,default=0.5] The fraction of the data used in local regression.
-        The value of fraction is between 0 and 1.
-    Outputs:
-        is_outlier -> [array-like of bool] A boolean array marking the outliers.
+        xy  -> [2D array] Coordinates of sources, with shape (n, 2).
+        UV  -> [2D array] Distortion values, with shape (n, 2).
+        frac -> [float, optional, default=0.5] The fraction of the data used in each local regression.
+                The value of 'frac' should be between 0 and 1. A smaller 'frac' makes the model more sensitive to local changes,
+                while a larger 'frac' produces a smoother fit.
+    Returns:
+        is_outlier -> [array-like of bool] A boolean array of shape (n,), where each element indicates whether the corresponding
+                      data point is identified as an outlier (True) or not (False).
     """
-    x,y = xy.T
-    U,V = UV.T
-    _, w_U = loess_2d(x, y, U, frac=frac)
-    _, w_V = loess_2d(x, y, V, frac=frac)
+    # Extract x, y coordinates from xy array
+    x, y = xy.T
+    # Extract U, V distortions from UV array
+    U, V = UV.T
 
-    flags = (w_U < W) | (w_V < W)
+    # Fit LOWESS models for U and V separately
+    U_fit, w_U = loess_2d(x, y, U, frac=frac)
+    V_fit, w_V = loess_2d(x, y, V, frac=frac)
+
+    # Compute residuals for U and V
+    resi_U = U - U_fit
+    resi_V = V - V_fit
+
+    # Calculate the median of the residuals for U and V
+    median_U = np.median(resi_U)
+    median_V = np.median(resi_V)
+
+    # Calculate the Median Absolute Deviation (MAD) for the residuals of U and V
+    sigma_U = mad(resi_U)
+    sigma_V = mad(resi_V)
+
+    # Identify outliers: deviations greater than 4 times the MAD from the median
+    flags = (np.abs(resi_U - median_U) > 4 * sigma_U) | (np.abs(resi_V - median_V) > 4 * sigma_V)
 
     return flags
 

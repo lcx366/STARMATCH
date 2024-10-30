@@ -468,6 +468,10 @@ print(sources.matched_results.catalog_df)
 
 ## Change log
 
+- **0.2.5 — Oct 30, 2024**
+  
+  - Improved outliers identification in star map matching with the method of LOWESS (Locally Weighted Scatterplot Smoothing).
+
 - **0.2.4 — Sep 29, 2024**
   
   - In order to fit the distortion model, it is necessary to select as many stars as possible in the field of view. However, considering the computational speed budget, the selection of all stars is modified to select evenly distributed bright stars.
