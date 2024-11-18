@@ -5,9 +5,6 @@
 import numpy as np
 from numpy.linalg import norm
 from skimage.transform import estimate_transform,matrix_transform
-
-PIXEL_TOL = 3 # Pixel distance tolerance to assume two points are the same.
-
 class _MatchTransform:
     """
     A class to find the best 2D similarity transform that maps a set of source points
@@ -82,7 +79,7 @@ class _MatchTransform:
         error = resid.max(axis=1)
         return error
 
-def find_transform_tree(source, target, min_matches, ttpte='similarity'):
+def find_transform_tree(source, target, pixel_tol, min_matches, ttpte='similarity'):
     """
     Estimates a similarity transform that best maps source points to target points,
     including rotation, translation, and scaling, using RANSAC or direct fitting based on the number of matches.
@@ -141,7 +138,7 @@ def find_transform_tree(source, target, min_matches, ttpte='similarity'):
         inlier_ind = np.arange(n_invariants)
     else:
         # Use RANSAC to find the best model while excluding outliers
-        best_t, inlier_ind = _ransac(matches, inv_model, PIXEL_TOL, min_matches) 
+        best_t, inlier_ind = _ransac(matches, inv_model, pixel_tol, min_matches)
 
     # Flatten the inlier matches to a 2D array for processing
     inlier_matches_flat = matches[inlier_ind].reshape(-1, 2)

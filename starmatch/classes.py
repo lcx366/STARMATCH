@@ -25,6 +25,9 @@ MAX_NUM_PER_TILE = 5
 # Maximum number of sources used to execute the star map matching.
 MAX_CONTROL_POINTS = 30
 
+# Pixel distance tolerance to assume two points are the same for the primary and secondary affine transformation.
+PIXEL_TOLS = (20,3)
+
 def photometric_model(F, C):
     """
     Photometric model to calculate the apparent magnitude M of a celestial object
@@ -106,7 +109,7 @@ def radec_res_rms(wcs,xy,catalog_df):
     radec_res = catalog_df[['ra','dec']].values - np.stack([ra_estimate,dec_estimate]).T
     # Metric correction for residual of Ra components
     radec_res[:,0] *=  np.cos(np.deg2rad(dec_estimate))
-    radec_res *= 3600 # Convert degrees to arcseconds
+    radec_res *= 3600 # Convert degrees to arcseconds 
     # Calculate the RMS of Ra and Dec components
     radec_rms = np.sqrt(np.mean(radec_res**2,axis=0))
 
@@ -114,7 +117,8 @@ def radec_res_rms(wcs,xy,catalog_df):
 
 class ResultContainer(object):
     """
-    Group the calculation results.
+    Class ResultContainer.
+    Group and package the calculation results.
 
     Attributes:
         _description -> [str] Description of the results.
@@ -248,7 +252,8 @@ class StarMatch(object):
             '_pixel_width': pixel_width,
             '_res': np.array(res),
             '_mode_invariants': mode_invariants,
-            '_min_matches': min_matches
+            '_min_matches': min_matches,
+            '_pixel_tols': PIXEL_TOLS
         }
 
         return Sources(info)      
@@ -316,6 +321,9 @@ class Sources(object):
     def __init__(self, info):
         """
         Initialize the Sources instance with the provided information dictionary.
+
+        Inputs:
+            info -> [dict] Dictionary containing source attributes and their values.
         """
         self.__dict__.update(info)
 
@@ -379,7 +387,7 @@ class Sources(object):
         hashed_data = sc_simplified_hashed.hashed_data
         simplified_catalog = sc_simplified_hashed.sc_simplified
 
-        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov, self._res, self._mode_invariants,self._min_matches,simplified_catalog,hashed_data)
+        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov,self._res,self._mode_invariants,self._pixel_tols,self._min_matches,simplified_catalog,hashed_data)
 
         fov_estimate = pixel_width_estimate * self._res
         self._pixel_width = pixel_width_estimate
@@ -426,6 +434,7 @@ class Sources(object):
             self : Updated instance with alignment and calibration results.
         """
         fov,pixel_width,res = self._fov,self._pixel_width,self._res
+        pixel_tols, min_matches = self._pixel_tols, self._min_matches
         fov_min,fov_max = min(fov),max(fov)
         search_radius = 1.06*fov_max
         pixels_camera,flux_camera = self.xy,self.flux
@@ -439,7 +448,7 @@ class Sources(object):
         # Align sources from the camera and from the star catalog
         camera_tuple = (self.xy,self.asterisms,self.kdtree)
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,self._min_matches)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[0],min_matches)
 
         # Roughly calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)
@@ -458,7 +467,7 @@ class Sources(object):
         wcs = stars.wcs
 
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,self._min_matches*2)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[1],min_matches*2)
         affine_matrix = transf.params
         affine_translation = transf.translation
         affine_rotation = transf.rotation # in radians
@@ -485,7 +494,7 @@ class Sources(object):
 
             # Parameters of the photometric model (magnitude constant) are fitted using the robust linear least squares method.
             C_affine, C_sigma_affine = photometric_robust_linear_fit(flux_camera_match, catalog_df_affine['mag'])
-
+            
             # Calculate the magnitude residual
             mag_res_affine = catalog_df_affine['mag'].values - photometric_model(flux_camera_match, C_affine)
             # Calculate RMS of the magnitude residual
@@ -614,7 +623,6 @@ class Sources(object):
         radec_res_calibrated = radec_res
         radec_rms_calibrated = radec_rms
         info_calibrated_results_photometric = info_matched_results_photometric
-
 
         # Distortion correction
         if distortion_calibrate is not None:
@@ -888,7 +896,10 @@ class Distortion(object):
 
     def __repr__(self):
         """
-        Formatted string with key attributes of the Distortion instance.
+        Return a string representation of the Distortion instance.
+
+        Returns:
+            str : Formatted string with key attributes of the Distortion instance.
         """
 
         return f"<Distortion object: model='{self.model}', distortion_scale={self.distortion_scale}>"
