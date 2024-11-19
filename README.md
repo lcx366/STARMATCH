@@ -544,6 +544,10 @@ $y_u = y_d + (y_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_2  (r_d^2 + 2  (y
 
 ## Change log
 
+- **0.2.7 — Nov 19, 2024**
+
+  - Previously, the star map matching process was based on two iterations. An additional matching iteration has been introduced, significantly improving the accuracy of star map matching.
+
 - **0.2.6 — Nov 18, 2024**
   
   - Implemented different pixel tolerances for initial and secondary matching stages, improving the success rate for both star map matching and blind matching.

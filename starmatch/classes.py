@@ -461,13 +461,28 @@ class Sources(object):
         else:
             stars.center = fp_radec_affine
 
-        stars.pixel_xy(pixel_width) 
+        # Recalculate the geometric features based on the pointing of the first match
+        stars.pixel_xy(pixel_width)
         stars.invariantfeatures(self._mode_invariants)
+        catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
+        # perform a second match
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[1],min_matches*2)
+
+        # Refine the pointing after the second match
+        pixels_cc_affine = matrix_transform([0,0],transf.params)
+        fp_radec_affine = stars.wcs.pixel_to_world_values(pixels_cc_affine[:,0],pixels_cc_affine[:,1])
+        stars.center = fp_radec_affine = np.hstack(fp_radec_affine)
+
+        # Recalculate the geometric features based on the pointing of the second match
+        stars.pixel_xy(pixel_width)
+        stars.invariantfeatures(self._mode_invariants)
+        catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
+        # perform a third match
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[1],min_matches*2)
+
         catalog_df = stars.df
         wcs = stars.wcs
 
-        catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[1],min_matches*2)
         affine_matrix = transf.params
         affine_translation = transf.translation
         affine_rotation = transf.rotation # in radians
