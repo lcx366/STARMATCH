@@ -544,7 +544,7 @@ $y_u = y_d + (y_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_2  (r_d^2 + 2  (y
 
 ## Change log
 
-- **0.2.8 — Nov 19, 2024**
+- **0.2.8 — Apr 29, 2025**
 
   - Add args 'threshold' to `lowess_smooth`.
   - This may be the last version.
