@@ -2,7 +2,7 @@ import numpy as np
 from loess.loess_2d import loess_2d
 from statsmodels.robust.scale import mad
 
-def lowess_smooth(xy, UV, frac=0.5):
+def lowess_smooth(xy, UV, frac=0.5, threshold=4):
     """
     Identify outliers in star map matching using the method of LOWESS (Locally Weighted Scatterplot Smoothing).
     LOWESS uses a weighted **linear regression** to fit the data locally.
@@ -15,6 +15,7 @@ def lowess_smooth(xy, UV, frac=0.5):
         frac -> [float, optional, default=0.5] The fraction of the data used in each local regression.
                 The value of 'frac' should be between 0 and 1. A smaller 'frac' makes the model more sensitive to local changes,
                 while a larger 'frac' produces a smoother fit.
+        threshold -> [float, optional, default=4] Threshold for identifying outliers, in terms of multiples of the MAD (Median Absolute Deviation).        
     Returns:
         is_outlier -> [array-like of bool] A boolean array of shape (n,), where each element indicates whether the corresponding
                       data point is identified as an outlier (True) or not (False).
@@ -41,9 +42,9 @@ def lowess_smooth(xy, UV, frac=0.5):
     sigma_V = mad(resi_V)
 
     # Identify outliers: deviations greater than 4 times the MAD from the median
-    flags = (np.abs(resi_U - median_U) > 4 * sigma_U) | (np.abs(resi_V - median_V) > 4 * sigma_V)
+    is_outlier = (np.abs(resi_U - median_U) > threshold * sigma_U) | (np.abs(resi_V - median_V) > threshold * sigma_V)
 
-    return flags
+    return is_outlier
 
 def _iqr_outliers(z, scale=4.0):
     """

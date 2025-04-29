@@ -2,7 +2,7 @@ from setuptools import setup,find_packages
 
 setup(
     name='starmatch',
-    version='0.2.7',
+    version='0.2.8',
     description='A package to handle the Star chart matching and astrometric positioning',
     author='Chunxiao Li',
     author_email='lcx366@126.com',
