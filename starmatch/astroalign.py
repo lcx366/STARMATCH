@@ -5,6 +5,7 @@
 import numpy as np
 from numpy.linalg import norm
 from skimage.transform import estimate_transform,matrix_transform
+
 class _MatchTransform:
     """
     A class to find the best 2D similarity transform that maps a set of source points
@@ -49,7 +50,7 @@ class _MatchTransform:
             data -> [array-like] An array of shape (N, M, 2) containing N sets of triangles/quads,
             where each triangle is represented by 3 indices, and each quad is represented by 4 indices.
             The first dimension corresponds to the source triangles/quads, and the second to the target triangles/quads.
-        Outputs:
+        Returns:
             A transform object that contains the estimated transformation.
         """
         flattened_arr = data.reshape(-1, 2)
@@ -67,7 +68,7 @@ class _MatchTransform:
         Inputs:
             data -> [array-like] An array of shape (N, M, 2) as in the fit method.
             approx_t -> The estimated transformation object returned by the fit method.
-        Outputs:
+        Returns:
             error -> [array-like] An array of maximum residual errors for each set of triangles/quads.
         """
         # Reshape data to separate source and destination indices for error calculation
@@ -95,7 +96,7 @@ def find_transform_tree(source, target, pixel_tol, min_matches, ttpte='similarit
             - target invariant features KDTree.
         min_matches -> [int] Minimum number of triangle or quad matches to accept a transformation.    
         ttpte -> [str,optional,default='similarity'] Type of transform. Available options are 'similarity' and 'affine'.
-    Outputs:
+    Returns:
         best_t -> The transformation object with transformation parameters - rotation, translation, and scale.
         matched_pairs -> [tuple of arrays] Arrays of corresponding coordinates in the source and target that match based on the estimated transformation.
         best_source_indices -> [list] List of indices in the source points that are part of the best matches.
@@ -122,7 +123,7 @@ def find_transform_tree(source, target, pixel_tol, min_matches, ttpte='similarit
                 matches.append(list(zip(t1, t2)))
 
     if not matches:
-        raise MaxIterError("No transformation found; insufficient matches.")
+        raise Exception("No transformation found; insufficient matches.")
 
     matches = np.array(matches)
     n_invariants = len(matches)
@@ -178,7 +179,7 @@ def _ransac(data, model, thresh, min_matches):
         this threshold are considered inliers.
         min_matches -> [int] The minimum number of data points required to fit the model. If a set of data points results in a 
         model fit that has fewer inliers than this threshold, the model is discarded.
-    Outputs:
+    Returns:
         bestfit -> [SimilarityTransform object] The model parameters that best fit the data, or None if no suitable model is found.
         best_inlier_idxs -> [array-like] Indices of the data points that are considered inliers to the best fitting model.
     Raises:

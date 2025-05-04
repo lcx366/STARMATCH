@@ -1,30 +1,31 @@
+import multiprocessing as mp
+
 from starcatalogquery.wcs import wcs_trans
 from starcatalogquery.catalog_index import find_healpix_level
 from scipy.spatial import KDTree
-import multiprocessing as mp
 from functools import partial
 
 from .astroalign import find_transform_tree,matrix_transform
 
 PIXEL_WIDTH_GUESS = 0.001 # Initial guess value of pixel width in deg
 
-def generate_args_list(catalog_data):
+def generate_args_list(hashed_data):
     """
     Generates a list of arguments for parallel processing of star catalog blind matching.
 
     Inputs:
         catalog_data -> [dict] A dictionary with levels 'K1' to 'K11'.
                            Each level has a list of tuples (xy, invariants, asterisms).
-    Outputs:
+    Returns:
         args_list -> [list] A list of tuples. Each tuple prepared for parallel processing.
     """
     args_list = []
-    fp_radecs = catalog_data.get('fp_radecs', [])
+    fp_radecs = hashed_data['fp_radecs']
 
     # Iterate through levels K1 to K11
-    for i in range(1, 12):
+    for i in range(1, 11):
         level_key = f"K{i}"
-        level_data = catalog_data.get(level_key, [])
+        level_data = hashed_data.get(level_key, [])
 
         # Create argument tuples for parallel processing
         for fp_radec, partition_data in zip(fp_radecs, level_data):
@@ -43,12 +44,17 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,
         camera_asterisms -> [2d array, m*3 or m*4] Indices of sources that correspond to each invariant.
         camera_invariant_tree -> [scipy.spatial.KDTree] kd-tree constructed from the geometric invariants.
         fov -> [2-ele tuple] Field of view in deg, such as (2,2). If not None, try to find the HEALPix level using fov.
+        res -> [tuple of int] Resolution of the camera, such as (1024,1024).
+        mode_invariants -> [str] Mode of invariant of sources. 'triangles' and 'quads' are available.
+        pixel_tols -> [tuple of int] Pixel distance tolerance to assume two points are the same for the primary and secondary affine transformation, such as (20,3).
+        min_matches -> [int] Minimum number of triangle or quad matches to accept a transformation.
+        simplified_catalog [object] The Simplified star catalog to use.
         hashed_data -> Hashed data in h5-formatted file, which records
             - center pointing of each sky area
             - pixel coordinates of stars
             - geometric invariants
             - asterism indices of the stars
-    Outputs:
+    Returns:
         fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in deg
         pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
@@ -56,14 +62,15 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,
     number_of_cores = mp.cpu_count() - 1
 
     params = (camera_xy,camera_asterisms,camera_invariant_tree,res,mode_invariants,pixel_tols,min_matches,simplified_catalog)
+    lvl_catalog = simplified_catalog.lvl
+    lvl_tmp = simplified_catalog._lvl_tmp
+    case = simplified_catalog.case
 
     # Divide tasks across multiple cores
     args = generate_args_list(hashed_data)
 
-    # try to find the HEALPix level
-    if fov is not None:
-        level, nside, npix, pixel_size = find_healpix_level(min(fov))
-        start = (int(level[1:]) - 1) * 48
+    if case == '1-2':
+        start = (lvl_tmp - 1) * 48
         end = start + 48
         args = args[start:end]
 
@@ -90,7 +97,7 @@ def find_transform_mp(params,arg):
     Inputs:
         params -> Variables that do not need to be allocated to multiple cores
         arg -> Variables that need to be allocated to multiple cores
-    Outputs:  
+    Returns:
         fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]
         pixel_width_estimate -> [float] Pixel width of camera in [deg]
     """
@@ -123,7 +130,10 @@ def find_transform_mp(params,arg):
         fov_max = max(res) * pixel_width_estimate
         search_radius = 1.06 * fov_max
 
-        stars = simplified_catalog.search_cone(fp_radec, search_radius, fov_min, max_num_per_tile=5)
+        level,_nside,_npix,_pixel_size = find_healpix_level(fov_min=fov_min)
+        lvl_tmp = int(level[1:])
+
+        stars = simplified_catalog.search_cone(fp_radec, search_radius, lvl=lvl_tmp, max_num_per_tile=5)
         stars.pixel_xy(pixel_width_estimate)  # Calculate the pixel coordinates of stars
         stars.invariantfeatures(mode_invariants)  # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs  # Object of WCS transformation

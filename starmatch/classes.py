@@ -1,9 +1,12 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+
 from numpy.linalg import norm,det
 from scipy.spatial import KDTree
 from scipy.interpolate import griddata
 from scipy.optimize import curve_fit
-import matplotlib.pyplot as plt
+
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import MaxNLocator
 from pathlib import Path
@@ -11,7 +14,6 @@ from skimage.transform import PiecewiseAffineTransform,PolynomialTransform
 from starcatalogquery.invariantfeatures import calculate_invariantfeatures
 from GPy.kern import RBF
 from GPy.models import GPRegression
-import statsmodels.api as sm
 
 from .orientation import get_orientation_mp
 from .astroalign import find_transform_tree,matrix_transform
@@ -49,7 +51,7 @@ def photometric_model(F, C):
     Inputs:
         F -> [float, array-like] The radiative flux of the celestial objects.
         C -> [float] The magnitude constant, typically related to the reference flux.
-    Outputs:
+    Returns:
         M -> [float] The apparent magnitude of the objects.
     """
     return C - 2.5 * np.log10(F)
@@ -62,7 +64,7 @@ def photometric_robust_linear_fit(F, M):
     Inputs:
         F -> [array-like,float] The radiative flux of the celestial objects.
         M -> [array-like,float] The apparent magnitudes of the celestial objects.
-    Outputs:
+    Returns:
         params -> [float] The estimated magnitude constant C.
         params_err -> [float] The standard error (uncertainty) of the estimated C.
     """
@@ -99,7 +101,7 @@ def radec_res_rms(wcs,xy,catalog_df):
         wcs -> [Object of class WCS] WCS transformation system
         xy -> [2d array (n*2)] Pixel coordinates of sources
         catalog_df -> Star catalog in form of pandas.DataFrame
-    Outputs:
+    Returns:
         radec_res -> [2d array(n*2)] Residual of Ra and Dec in arcseconds
         radec_rms -> [array(2 elements)] RMS of Ra and Dec in arcseconds
     """
@@ -156,7 +158,7 @@ class ResultContainer(object):
         Inputs:
             path_res -> [str,optional,default=None] Path to save the csv-formatted file
         Outputs:
-            path_res -> [str] Path of the csv-formatted file
+            The csv-formatted file
         """
         # Ensure the directory exists
         Path(path_res).parent.mkdir(parents=True, exist_ok=True)
@@ -196,7 +198,7 @@ class StarMatch(object):
             flux_raw -> [array,optional,default=None] Flux(Grayscale value) of sources. If None, skip the calculation of point source apparent magnitude.
             mode_invariants -> [str] Mode of geometric invariants to use. Available options are 'triangles' or 'quads'.
             distortion -> [Object of class Distortion, optional, default=None] Distortion model to use. If None, no distortion is applied.
-        Outputs:
+        Returns:
             sources -> Instance of class Sources, which includes the following attributes:
                 xy_raw -> [2d array, n*2] Pixel coordinates of sources
                 flux_raw -> [array] Flux(Grayscale value) of sources
@@ -336,6 +338,7 @@ class Sources(object):
         """
         return "<Sources object: max_control_points = {:d}, res = {:}>".format(self.max_control_points,self._res)
 
+
     def invariantfeatures(self,max_control_points=None):
         """
         Computes geometric invariant features for a set of source points by generating unique triangles or quads.
@@ -346,7 +349,7 @@ class Sources(object):
         Inputs:
             max_control_points -> [int,optional,default=None] Maximum number of sources used to calculate invariant features.
             If None, use all sources.
-        Outputs:
+        Returns:
             Updated Object Sources
         """
         info = self.__dict__.copy()
@@ -373,7 +376,7 @@ class Sources(object):
             >>> fp_radec,pixel_width_estimate,fov_estimate = sources.center_pointing(simplified_catalog)
         Inputs:
             sc_simplified_hashed -> [H5HashesData] An instance of H5HashesData containing the geometric invariants data.
-        Outputs:
+        Returns:
             fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
             pixel_width_estimate -> [float] Pixel width of camera in [deg]
             fov_estimate -> [2-ele tuple] FOV of camera in [deg]
@@ -381,6 +384,7 @@ class Sources(object):
         # Check the mode of invariant features for both sources and star catalogs.
         mode_invariants_sources = self._mode_invariants
         mode_invariants_catalogs = sc_simplified_hashed.mode_invariants
+
         if mode_invariants_sources != mode_invariants_catalogs:
             raise Exception("The mode of the invariant feature of ss is '{mode_invariants_sources}', while that of star catalog is '{mode_invariants_catalogs}'. The two are inconsistent.")
 
@@ -389,7 +393,7 @@ class Sources(object):
 
         fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov,self._res,self._mode_invariants,self._pixel_tols,self._min_matches,simplified_catalog,hashed_data)
 
-        fov_estimate = pixel_width_estimate * self._res
+        fov_estimate = tuple(pixel_width_estimate * self._res)
         self._pixel_width = pixel_width_estimate
         self._fov = fov_estimate
 
@@ -430,17 +434,23 @@ class Sources(object):
             outlier_remove -> [str] Method of outlier removal. Available options are:
                 - 'lowess' -> Identifies outliers with the method of LOWESS (Locally Weighted Scatterplot Smoothing). Here, LOWESS uses a weighted **linear regression** by default.
                 - 'iqr' -> Identifies outliers with the method of Interquartile Range (IQR).
-        Outputs:
-            self : Updated instance with alignment and calibration results.
         """
         fov,pixel_width,res = self._fov,self._pixel_width,self._res
+        lvl_tmp = simplified_catalog._lvl_tmp
+
+        if fov is None:
+            raise Exception('FOV is not specified.')
+
+        if lvl_tmp is None:
+            raise Exception('Healpix level of star catalog is not specified.')
+
         pixel_tols, min_matches = self._pixel_tols, self._min_matches
         fov_min,fov_max = min(fov),max(fov)
-        search_radius = 1.06*fov_max
+        search_radius = 1.06*fov_max # 1.5/sqrt(2)
         pixels_camera,flux_camera = self.xy,self.flux
 
         # Query Star Catalog around the fiducial point.
-        stars = simplified_catalog.search_cone(fp_radec,search_radius,fov_min,max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+        stars = simplified_catalog.search_cone(fp_radec,search_radius,max_num_per_tile=MAX_NUM_PER_TILE,lvl=lvl_tmp,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) # Calculate the pixel coordinates of stars
         stars.invariantfeatures(self._mode_invariants) # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs # Object of WCS transformation
@@ -457,7 +467,7 @@ class Sources(object):
 
         # Re-calculate the affine transform by the updated center pointing of the camera
         if norm(pixels_cc_affine) > min(res)/10:
-            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,fov_min,max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,max_num_per_tile=MAX_NUM_PER_TILE,lvl=lvl_tmp,astrometry_corrections=astrometry_corrections)
         else:
             stars.center = fp_radec_affine
 
@@ -537,7 +547,7 @@ class Sources(object):
         # This part replaces the sources of the affine matching with the sources of the 3D-Tree matching and performs calculations similar to the previous part.
         # Apply the affine matrix and the magnitude constant to all sources in camera image, then build a dimensionless 3D-Tree for camera and starcatalog 
         pixels_camera_affine = matrix_transform(self.xy_raw,affine_matrix)
-        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 1.5, fov_min/2, max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 1.5, max_num_per_tile=MAX_NUM_PER_TILE*4,lvl=lvl_tmp,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) 
         catalog_df = stars.df
 
@@ -711,7 +721,7 @@ class Sources(object):
         Inputs:
             xy_target -> [array] Pixel coordinates of unknown sources
             flux_target -> [array] Flux(Grayscale value) of unknown sources
-        Outputs:
+        Returns:
             radec -> [array] Estimated celestial coordinates (Ra, Dec) of the target sources.
             M_affine -> [array, optional] Apparent magnitudes estimated from the affine model.
             M_matched -> [array, optional] Apparent magnitudes estimated from the matched results.
@@ -751,13 +761,9 @@ class Sources(object):
         Usage:
             >>> sources.fp_calibrate()
             >>> print(sources.fp_radec_calibrated)
-        Outputs:
-            self -> Updated instance with calibrated center pointing.
         """
         fp_radec_calibrated = self.apply([0,0])
         self.fp_radec_calibrated = fp_radec_calibrated[0]
-
-        return self
             
     def show_distortion(self,mode='vector',fig_file=None):
         """
