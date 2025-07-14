@@ -1,9 +1,12 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+
 from numpy.linalg import norm,det
 from scipy.spatial import KDTree
 from scipy.interpolate import griddata
 from scipy.optimize import curve_fit
-import matplotlib.pyplot as plt
+
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.ticker import MaxNLocator
 from pathlib import Path
@@ -11,22 +14,13 @@ from skimage.transform import PiecewiseAffineTransform,PolynomialTransform
 from starcatalogquery.invariantfeatures import calculate_invariantfeatures
 from GPy.kern import RBF
 from GPy.models import GPRegression
-import statsmodels.api as sm
 
 from .orientation import get_orientation_mp
 from .astroalign import find_transform_tree,matrix_transform
 from .preprocessing import lowess_smooth,iqr_outliers
 from .distortion import distortion_model
 from .plot import show_image
-
-# Maximum number of stars to extract from each tile.
-MAX_NUM_PER_TILE = 5
-
-# Maximum number of sources used to execute the star map matching.
-MAX_CONTROL_POINTS = 30
-
-# Pixel distance tolerance to assume two points are the same for the primary and secondary affine transformation.
-PIXEL_TOLS = (20,3)
+from . import Params
 
 def photometric_model(F, C):
     """
@@ -49,7 +43,7 @@ def photometric_model(F, C):
     Inputs:
         F -> [float, array-like] The radiative flux of the celestial objects.
         C -> [float] The magnitude constant, typically related to the reference flux.
-    Outputs:
+    Returns:
         M -> [float] The apparent magnitude of the objects.
     """
     return C - 2.5 * np.log10(F)
@@ -62,7 +56,7 @@ def photometric_robust_linear_fit(F, M):
     Inputs:
         F -> [array-like,float] The radiative flux of the celestial objects.
         M -> [array-like,float] The apparent magnitudes of the celestial objects.
-    Outputs:
+    Returns:
         params -> [float] The estimated magnitude constant C.
         params_err -> [float] The standard error (uncertainty) of the estimated C.
     """
@@ -99,7 +93,7 @@ def radec_res_rms(wcs,xy,catalog_df):
         wcs -> [Object of class WCS] WCS transformation system
         xy -> [2d array (n*2)] Pixel coordinates of sources
         catalog_df -> Star catalog in form of pandas.DataFrame
-    Outputs:
+    Returns:
         radec_res -> [2d array(n*2)] Residual of Ra and Dec in arcseconds
         radec_rms -> [array(2 elements)] RMS of Ra and Dec in arcseconds
     """
@@ -156,7 +150,7 @@ class ResultContainer(object):
         Inputs:
             path_res -> [str,optional,default=None] Path to save the csv-formatted file
         Outputs:
-            path_res -> [str] Path of the csv-formatted file
+            The csv-formatted file
         """
         # Ensure the directory exists
         Path(path_res).parent.mkdir(parents=True, exist_ok=True)
@@ -169,7 +163,8 @@ class StarMatch(object):
     Class StarMatch.
     Generate an instance of class Sources as an entrance to star map matching and astronomical calibration.
     """
-    def from_sources(xy_raw,camera_params,flux_raw=None,mode_invariants='triangles',distortion=None):
+    @staticmethod
+    def from_sources(xy_raw,camera_params,flux_raw=None,max_control_points=30,num_nearest_neighbors=15,mode_invariants='triangles',distortion=None):
         """
         Generate an instance of the class Sources as an entry point to star map matching and astronomical calibration.
 
@@ -194,9 +189,11 @@ class StarMatch(object):
             camera_params -> [dict] The necessary parameters of the camera, such as {'fov':(2,2),'pixel_width':0.02,'res':(1024,1024)}
             where 'fov' and 'pixel_width' are in [deg], and 'res' represents the resolution of the camera.
             flux_raw -> [array,optional,default=None] Flux(Grayscale value) of sources. If None, skip the calculation of point source apparent magnitude.
+            max_control_points -> [int,optional,default=30] Maximum number of sources used for initial star matching.
+            num_nearest_neighbors -> [int,optional,default=15] Number of nearest stars to select from the detected sources for neighbor searches.
             mode_invariants -> [str] Mode of geometric invariants to use. Available options are 'triangles' or 'quads'.
             distortion -> [Object of class Distortion, optional, default=None] Distortion model to use. If None, no distortion is applied.
-        Outputs:
+        Returns:
             sources -> Instance of class Sources, which includes the following attributes:
                 xy_raw -> [2d array, n*2] Pixel coordinates of sources
                 flux_raw -> [array] Flux(Grayscale value) of sources
@@ -222,7 +219,7 @@ class StarMatch(object):
 
         # Truncate the number of control points if necessary
         n = len(xy_raw)
-        max_control_points = min(MAX_CONTROL_POINTS, n)
+        max_control_points = min(max_control_points, n)
         xy = xy_raw[:max_control_points]
 
         if flux_raw is not None:
@@ -231,12 +228,12 @@ class StarMatch(object):
             flux = flux_raw
 
         # Calculate geometric invariants and construct KDTree
-        invariants,asterisms,kdtree = calculate_invariantfeatures(xy,mode_invariants)
+        invariants,asterisms,kdtree = calculate_invariantfeatures(xy,num_nearest_neighbors,mode_invariants)
 
         if mode_invariants == 'triangles':
-            min_matches = 6
+            min_matches = Params.MIN_MATCHES[0]
         elif mode_invariants == 'quads':
-            min_matches = 4
+            min_matches = Params.MIN_MATCHES[1]
 
         # Create a dictionary of source information
         info = {
@@ -248,14 +245,13 @@ class StarMatch(object):
             'asterisms': asterisms,
             'kdtree': kdtree,
             'max_control_points': max_control_points,
+            'num_nearest_neighbors': num_nearest_neighbors,
             '_fov': fov,
             '_pixel_width': pixel_width,
             '_res': np.array(res),
             '_mode_invariants': mode_invariants,
-            '_min_matches': min_matches,
-            '_pixel_tols': PIXEL_TOLS
+            '_min_matches': min_matches
         }
-
         return Sources(info)      
 
 class Sources(object):
@@ -274,6 +270,7 @@ class Sources(object):
         asterisms -> [2d array (m, 3) or (m, 4)] Indices of sources that correspond to each invariant triangle.
         kdtree -> [Object KDTree] 2D-tree of triangle invariants or 4D-tree of quad invariants for quick nearest-neighbor lookup.
         max_control_points -> [int] Maximum number of sources used to execute the star map matching.
+        num_nearest_neighbors -> [int] Number of nearest stars to select from the detected sources for neighbor searches.
         _fov -> [2-ele tuple] Field of view of the camera in degrees, such as (2,2).
         _pixel_width -> [float] Pixel width of the camera in degrees.
         _res -> [tuple of int] Resolution of the camera, such as [1024,1024].
@@ -336,6 +333,7 @@ class Sources(object):
         """
         return "<Sources object: max_control_points = {:d}, res = {:}>".format(self.max_control_points,self._res)
 
+
     def invariantfeatures(self,max_control_points=None):
         """
         Computes geometric invariant features for a set of source points by generating unique triangles or quads.
@@ -346,7 +344,7 @@ class Sources(object):
         Inputs:
             max_control_points -> [int,optional,default=None] Maximum number of sources used to calculate invariant features.
             If None, use all sources.
-        Outputs:
+        Returns:
             Updated Object Sources
         """
         info = self.__dict__.copy()
@@ -354,7 +352,7 @@ class Sources(object):
         if max_control_points is None or max_control_points > n: max_control_points = n
         if self.max_control_points != max_control_points:  
             xy = self.xy_raw[:max_control_points]
-            invariants,asterisms,kdtree = calculate_invariantfeatures(xy,self._mode_invariants)
+            invariants,asterisms,kdtree = calculate_invariantfeatures(xy,self.num_nearest_neighbors,self._mode_invariants)
             info.update({'xy':xy,'invariants':invariants,'asterisms':asterisms,'kdtree':kdtree,'max_control_points':max_control_points})
         return Sources(info)
 
@@ -373,7 +371,7 @@ class Sources(object):
             >>> fp_radec,pixel_width_estimate,fov_estimate = sources.center_pointing(simplified_catalog)
         Inputs:
             sc_simplified_hashed -> [H5HashesData] An instance of H5HashesData containing the geometric invariants data.
-        Outputs:
+        Returns:
             fp_radec -> [tuple of float] Center pointing of the camera in form of [Ra,Dec] in [deg]  
             pixel_width_estimate -> [float] Pixel width of camera in [deg]
             fov_estimate -> [2-ele tuple] FOV of camera in [deg]
@@ -381,15 +379,16 @@ class Sources(object):
         # Check the mode of invariant features for both sources and star catalogs.
         mode_invariants_sources = self._mode_invariants
         mode_invariants_catalogs = sc_simplified_hashed.mode_invariants
+
         if mode_invariants_sources != mode_invariants_catalogs:
             raise Exception("The mode of the invariant feature of ss is '{mode_invariants_sources}', while that of star catalog is '{mode_invariants_catalogs}'. The two are inconsistent.")
 
         hashed_data = sc_simplified_hashed.hashed_data
         simplified_catalog = sc_simplified_hashed.sc_simplified
 
-        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov,self._res,self._mode_invariants,self._pixel_tols,self._min_matches,simplified_catalog,hashed_data)
+        fp_radec,pixel_width_estimate = get_orientation_mp(self.xy,self.asterisms,self.kdtree,self._fov,self._res,self._mode_invariants,Params.PIXEL_TOLS,self._min_matches,simplified_catalog,hashed_data)
 
-        fov_estimate = pixel_width_estimate * self._res
+        fov_estimate = tuple(pixel_width_estimate * self._res)
         self._pixel_width = pixel_width_estimate
         self._fov = fov_estimate
 
@@ -430,25 +429,31 @@ class Sources(object):
             outlier_remove -> [str] Method of outlier removal. Available options are:
                 - 'lowess' -> Identifies outliers with the method of LOWESS (Locally Weighted Scatterplot Smoothing). Here, LOWESS uses a weighted **linear regression** by default.
                 - 'iqr' -> Identifies outliers with the method of Interquartile Range (IQR).
-        Outputs:
-            self : Updated instance with alignment and calibration results.
         """
         fov,pixel_width,res = self._fov,self._pixel_width,self._res
-        pixel_tols, min_matches = self._pixel_tols, self._min_matches
+        lvl_tmp = simplified_catalog._lvl_tmp
+
+        if fov is None:
+            raise Exception('FOV is not specified.')
+
+        if lvl_tmp is None:
+            raise Exception('Healpix level of star catalog is not specified.')
+
+        min_matches = self._min_matches
         fov_min,fov_max = min(fov),max(fov)
-        search_radius = 1.06*fov_max
+        search_radius = 1.06*fov_max # 1.5/sqrt(2)
         pixels_camera,flux_camera = self.xy,self.flux
 
         # Query Star Catalog around the fiducial point.
-        stars = simplified_catalog.search_cone(fp_radec,search_radius,fov_min,max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+        stars = simplified_catalog.search_cone(fp_radec,search_radius,max_num_per_tile=Params.MAX_NUM_PER_TILE,lvl=lvl_tmp,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) # Calculate the pixel coordinates of stars
-        stars.invariantfeatures(self._mode_invariants) # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
+        stars.invariantfeatures(Params.NUM_NEAREST_NEIGHBORS,self._mode_invariants) # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs # Object of WCS transformation
 
         # Align sources from the camera and from the star catalog
         camera_tuple = (self.xy,self.asterisms,self.kdtree)
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[0],min_matches)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,Params.PIXEL_TOLS[1],min_matches)
 
         # Roughly calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)
@@ -457,16 +462,16 @@ class Sources(object):
 
         # Re-calculate the affine transform by the updated center pointing of the camera
         if norm(pixels_cc_affine) > min(res)/10:
-            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,fov_min,max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+            stars = simplified_catalog.search_cone(fp_radec_affine,search_radius,max_num_per_tile=Params.MAX_NUM_PER_TILE,lvl=lvl_tmp,astrometry_corrections=astrometry_corrections)
         else:
             stars.center = fp_radec_affine
 
         # Recalculate the geometric features based on the pointing of the first match
         stars.pixel_xy(pixel_width)
-        stars.invariantfeatures(self._mode_invariants)
+        stars.invariantfeatures(Params.NUM_NEAREST_NEIGHBORS,self._mode_invariants)
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
         # perform a second match
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[1],min_matches*2)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,Params.PIXEL_TOLS[2],min_matches*2)
 
         # Refine the pointing after the second match
         pixels_cc_affine = matrix_transform([0,0],transf.params)
@@ -475,10 +480,10 @@ class Sources(object):
 
         # Recalculate the geometric features based on the pointing of the second match
         stars.pixel_xy(pixel_width)
-        stars.invariantfeatures(self._mode_invariants)
+        stars.invariantfeatures(Params.NUM_NEAREST_NEIGHBORS,self._mode_invariants)
         catalog_tuple = (stars.xy,stars.asterisms,stars.kdtree)
         # perform a third match
-        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,pixel_tols[1],min_matches*2)
+        transf, (pixels_camera_match, pixels_catalog_match),_s,_d = find_transform_tree(camera_tuple,catalog_tuple,Params.PIXEL_TOLS[2],min_matches*2)
 
         catalog_df = stars.df
         wcs = stars.wcs
@@ -537,7 +542,7 @@ class Sources(object):
         # This part replaces the sources of the affine matching with the sources of the 3D-Tree matching and performs calculations similar to the previous part.
         # Apply the affine matrix and the magnitude constant to all sources in camera image, then build a dimensionless 3D-Tree for camera and starcatalog 
         pixels_camera_affine = matrix_transform(self.xy_raw,affine_matrix)
-        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 1.5, fov_min/2, max_num_per_tile=MAX_NUM_PER_TILE,astrometry_corrections=astrometry_corrections)
+        stars = simplified_catalog.search_cone(fp_radec_affine, search_radius / 1.5, max_num_per_tile=Params.MAX_NUM_PER_TILE*4,lvl=lvl_tmp,astrometry_corrections=astrometry_corrections)
         stars.pixel_xy(pixel_width) 
         catalog_df = stars.df
 
@@ -711,7 +716,7 @@ class Sources(object):
         Inputs:
             xy_target -> [array] Pixel coordinates of unknown sources
             flux_target -> [array] Flux(Grayscale value) of unknown sources
-        Outputs:
+        Returns:
             radec -> [array] Estimated celestial coordinates (Ra, Dec) of the target sources.
             M_affine -> [array, optional] Apparent magnitudes estimated from the affine model.
             M_matched -> [array, optional] Apparent magnitudes estimated from the matched results.
@@ -751,13 +756,9 @@ class Sources(object):
         Usage:
             >>> sources.fp_calibrate()
             >>> print(sources.fp_radec_calibrated)
-        Outputs:
-            self -> Updated instance with calibrated center pointing.
         """
         fp_radec_calibrated = self.apply([0,0])
         self.fp_radec_calibrated = fp_radec_calibrated[0]
-
-        return self
             
     def show_distortion(self,mode='vector',fig_file=None):
         """
