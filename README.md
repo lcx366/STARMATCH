@@ -561,7 +561,7 @@ $y_u = y_d + (y_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_2  (r_d^2 + 2  (y
 ## Change log
 
 - **1.0.1 — Jul 14, 2025**
-
+- 
   - Increased the pixel distance tolerance for blind matching from 20 pixels to 60 pixels.
   - Adjusted the minimum number of inliers required for RANSAC in initial astrometric matching: (triangles, quads) changed from (6, 4) to (8, 2).
   - Increased the number of nearest neighbors considered for each detected source from 9 to 15 during geometric invariant construction.
