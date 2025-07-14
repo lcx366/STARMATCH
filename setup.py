@@ -2,7 +2,7 @@ from setuptools import setup,find_packages
 
 setup(
     name='starmatch',
-    version='1.0.0',
+    version='1.0.1',
     description='A package to handle the Star chart matching and astrometric positioning',
     author='Chunxiao Li',
     author_email='lcx366@126.com',
@@ -16,9 +16,9 @@ setup(
         'Development Status :: 4 - Beta',
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
-        'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
         'License :: OSI Approved :: MIT License',
         ],
     packages = find_packages(),

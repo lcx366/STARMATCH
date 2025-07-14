@@ -75,7 +75,7 @@ Refer to the [STARQUERY ](https://github.com/lcx366/STARQUERY/tree/main)document
 >>> from starcatalogquery import StarCatalog
 >>> base_dir = os.path.expanduser("~/src/sc-data")
 >>> dir_from_simplified = os.path.join(base_dir,'starcatalogs/simplified/at-hyg32/lvl6-mag12.0/epoch2019.5/')  # Path to the simplified star catalog
->>> sc_simplified = StarCatalog.load(dir_sc_simplified)
+>>> sc_simplified = StarCatalog.load(dir_from_simplified)
 ```
 
 **Step 2: Extract Sources from Images or Files**
@@ -90,7 +90,7 @@ For example, a test file (test.txt) containing pixel coordinates and grayscale v
 
 ```python
 >>> import numpy as np
->>> data = np.loadtxt('obs/test.txt')
+>>> data = np.loadtxt('obs/test_fov2.txt')
 >>> # Translate the origin of coordinates to the center of the image
 >>> x = data[:, 0] - 512 # The resolution is (1024,1024)
 >>> y = 512 - data[:, 1]
@@ -123,10 +123,12 @@ At each level:
 
 - These stars are **aggregated upward** into the **K1 level**.
 
+- For each selected star, its **10 nearest neighbors (including itself)** are identified within the same K1-level tile using a nearest neighbor search.
+
 - For each K1 pixel, **geometric invariants** (triangles or quads) are computed and stored in **precompiled HDF5 hash files** (.h5).
 
 ```python
->>> sc_hashed = sc_simplified.hashes() # Build the h5-formatted Hash File
+>>> sc_hashed = sc_simplified.hashes(mode_invariants) # Build the h5-formatted Hash File
 ```
 
 The hash file contains the following components:
@@ -308,7 +310,7 @@ print(sources.matched_results.catalog_df)
 
 If star map matching fails, consider the following:
 
-1. **Image Coordinates**: Ensure that the origin of the image coordinates is correctly set. The origin may differ (e.g., upper-left corner vs. lower-left corner). Adjust the pixel coordinates of the sources accordingly.
+1. **Image Coordinates**: Ensure that the origin of the image coordinates is correctly set. The origin may differ (e.g., upper-left corner vs. lower-left corner). Adjust the pixel coordinates of the sources accordingly. Also, check whether the order of coordinate points is sorted by brightness, typically from brightest to faintest.
 
 2. **Field of View**: Select an appropriate star catalog based on the field of view:
    
@@ -316,9 +318,11 @@ If star map matching fails, consider the following:
    
    - **Faint star catalog**: Suitable for a smaller field of view.
 
-3. **Geometric Invariants**: When constructing geometric invariants, the default number of stars used in the **kd-Tree nearest neighbor search** is 9. Increasing this number may **improve the success rate of matching**.
+3. **Geometric Invariants**: When constructing geometric invariants, the brightest 30 detected sources are selected by default. For each source, its 15 nearest neighbors (including itself) are found using kd-Tree search. Increasing the number of neighbors may improve the success rate of matching.
 
-4. **Blind Matching**: For small fields of view, consider increasing the **HEALPix level** to enhance the success rate of blind matching.
+4. **Pixel Tolerance**: Consider increasing the inlier pixel tolerance for RANSAC. The pixel distance tolerances for considering two points identical during blind, primary, and secondary affine transformations are typically set as follows:
+PIXEL_TOLS = (60, 20, 3).
+Larger tolerances may improve the robustness of matching, especially in the presence of distortions or large initial uncertainties.
 
 ### Geometric Distortion Model
 
@@ -555,6 +559,12 @@ $y_u = y_d + (y_d - x_c)  (K_1  r_d^2 + K_2  r_d^4 + ...) + (P_2  (r_d^2 + 2  (y
 </p>
 
 ## Change log
+
+- **1.0.1 — Jul 14, 2025**
+
+  - Increased the pixel distance tolerance for blind matching from 20 pixels to 60 pixels.
+  - Adjusted the minimum number of inliers required for RANSAC in initial astrometric matching: (triangles, quads) changed from (6, 4) to (8, 2).
+  - Increased the number of nearest neighbors considered for each detected source from 9 to 15 during geometric invariant construction.
 
 - **1.0.0 — May 04, 2025**
   

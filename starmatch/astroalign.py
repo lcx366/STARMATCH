@@ -109,8 +109,8 @@ def find_transform_tree(source, target, pixel_tol, min_matches, ttpte='similarit
     target_controlp,target_asterisms,target_invariant_tree = target
 
     # Ensure there are enough reference points in both source and target
-    if len(source_controlp) < 3 or len(target_controlp) < 3:
-        raise ValueError("Not enough reference stars in source or target image; minimum required is 3.")
+    if len(source_controlp) < 5 or len(target_controlp) < 5:
+        raise ValueError("Not enough reference stars in source or target image; minimum required is 5.")
 
     # Find matches between source and target invariants within a certain radius
     matches_list = source_invariant_tree.query_ball_tree(target_invariant_tree, r=0.01)
@@ -121,7 +121,6 @@ def find_transform_tree(source, target, pixel_tol, min_matches, ttpte='similarit
         if t2_list:  # Ensure t2_list is not empty
             for t2 in target_asterisms[t2_list]:
                 matches.append(list(zip(t1, t2)))
-
     if not matches:
         raise Exception("No transformation found; insufficient matches.")
 
@@ -130,16 +129,9 @@ def find_transform_tree(source, target, pixel_tol, min_matches, ttpte='similarit
 
     # Attempt to fit a transformation model using the matches
     inv_model = _MatchTransform(source_controlp, target_controlp, ttpte)
-    
-    # Decide on the fitting approach based on the number of control points and matches
-    if (len(source_controlp) == 3 or len(target_controlp) == 3) and n_invariants == 1:
-        # Directly fit the model if only one match is found
-        best_t = inv_model.fit(matches)
-        # Assume all indices are inliers since there's only one match
-        inlier_ind = np.arange(n_invariants)
-    else:
-        # Use RANSAC to find the best model while excluding outliers
-        best_t, inlier_ind = _ransac(matches, inv_model, pixel_tol, min_matches)
+
+    # Use RANSAC to find the best model while excluding outliers
+    best_t, inlier_ind = _ransac(matches, inv_model, pixel_tol, min_matches)
 
     # Flatten the inlier matches to a 2D array for processing
     inlier_matches_flat = matches[inlier_ind].reshape(-1, 2)
@@ -209,6 +201,7 @@ def _ransac(data, model, thresh, min_matches):
             break
     if good_fit is None:
         raise Exception("List of matching patterns exhausted before an acceptable transformation was found.")
+
     # Fit the model to the final set of inliers
     err = model.get_error(data, good_fit)
 

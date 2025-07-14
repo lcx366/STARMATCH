@@ -6,6 +6,7 @@ from scipy.spatial import KDTree
 from functools import partial
 
 from .astroalign import find_transform_tree,matrix_transform
+from . import Params
 
 PIXEL_WIDTH_GUESS = 0.001 # Initial guess value of pixel width in deg
 
@@ -46,7 +47,7 @@ def get_orientation_mp(camera_xy,camera_asterisms,camera_invariant_tree,fov,res,
         fov -> [2-ele tuple] Field of view in deg, such as (2,2). If not None, try to find the HEALPix level using fov.
         res -> [tuple of int] Resolution of the camera, such as (1024,1024).
         mode_invariants -> [str] Mode of invariant of sources. 'triangles' and 'quads' are available.
-        pixel_tols -> [tuple of int] Pixel distance tolerance to assume two points are the same for the primary and secondary affine transformation, such as (20,3).
+        pixel_tols -> [tuple of int] Pixel distance tolerance to assume two points are the same for the blind, primary and secondary affine transformation, such as (60,20,3).
         min_matches -> [int] Minimum number of triangle or quad matches to accept a transformation.
         simplified_catalog [object] The Simplified star catalog to use.
         hashed_data -> Hashed data in h5-formatted file, which records
@@ -133,12 +134,12 @@ def find_transform_mp(params,arg):
         level,_nside,_npix,_pixel_size = find_healpix_level(fov_min=fov_min)
         lvl_tmp = int(level[1:])
 
-        stars = simplified_catalog.search_cone(fp_radec, search_radius, lvl=lvl_tmp, max_num_per_tile=5)
+        stars = simplified_catalog.search_cone(fp_radec, search_radius, lvl=lvl_tmp, max_num_per_tile=Params.MAX_NUM_PER_TILE)
         stars.pixel_xy(pixel_width_estimate)  # Calculate the pixel coordinates of stars
-        stars.invariantfeatures(mode_invariants)  # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
+        stars.invariantfeatures(Params.NUM_NEAREST_NEIGHBORS,mode_invariants)  # Calculate the triangle invariants and constructs a 2D Tree of stars; and records the asterism indices for each triangle.
         wcs = stars.wcs  # Object of WCS transformation
         stars_tuple = (stars.xy, stars.asterisms, stars.kdtree)
-        transf, (pixels_camera_match, pixels_catalog_match), _s, _d = find_transform_tree(camera_tuple,stars_tuple,pixel_tols[0],min_matches*2)
+        transf, (pixels_camera_match, pixels_catalog_match), _s, _d = find_transform_tree(camera_tuple,stars_tuple,pixel_tols[1],min_matches*2)
 
         # Calibrate the center pointing of the camera
         pixels_cc_affine = matrix_transform([0,0],transf.params)
